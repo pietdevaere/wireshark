@@ -5,19 +5,7 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #include <config.h>
@@ -64,7 +52,7 @@
 #include "ui/simple_dialog.h"
 #include "ui/main_statusbar.h"
 #include "ui/progress_dlg.h"
-#include "ui/ui_util.h"
+#include "ui/ws_ui_util.h"
 
 /* Needed for addrinfo */
 #ifdef HAVE_SYS_TYPES_H
@@ -79,15 +67,8 @@
 # include <netinet/in.h>
 #endif
 
-#ifdef HAVE_NETDB_H
-# include <netdb.h>
-#endif
-
-#ifdef HAVE_WINSOCK2_H
-# include <winsock2.h>
-#endif
-
 #ifdef _WIN32
+# include <winsock2.h>
 # include <ws2tcpip.h>
 #endif
 
@@ -681,9 +662,7 @@ cf_read(capture_file *cf, gboolean reloading)
   g_free(name_ptr);
 
   /* Cleanup and release all dfilter resources */
-  if (dfcode != NULL) {
-    dfilter_free(dfcode);
-  }
+  dfilter_free(dfcode);
 
   epan_dissect_cleanup(&edt);
 
@@ -849,9 +828,7 @@ cf_continue_tail(capture_file *cf, volatile int to_read, int *err)
   cf->lnk_t = wtap_file_encap(cf->wth);
 
   /* Cleanup and release all dfilter resources */
-  if (dfcode != NULL) {
-    dfilter_free(dfcode);
-  }
+  dfilter_free(dfcode);
 
   epan_dissect_cleanup(&edt);
 
@@ -963,9 +940,7 @@ cf_finish_tail(capture_file *cf, int *err)
   }
 
   /* Cleanup and release all dfilter resources */
-  if (dfcode != NULL) {
-    dfilter_free(dfcode);
-  }
+  dfilter_free(dfcode);
 
   epan_dissect_cleanup(&edt);
 

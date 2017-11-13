@@ -29,6 +29,7 @@
 	<!ENTITY Oracle			SYSTEM "Oracle.xml">
 	<!ENTITY Juniper		SYSTEM "Juniper.xml">
 	<!ENTITY Inovar			SYSTEM "Inovar.xml">
+	<!ENTITY Huawei			SYSTEM "Huawei.xml">
 	<!ENTITY Custom			SYSTEM "Custom.xml">
 ]>
 <dictionary>
@@ -2368,7 +2369,7 @@
 				<gavp name="OC-Feature-Vector"/>
 			</grouped>
 		</avp>
-		<avp name="OC-Feature-Vector" code="624" mandatory="may">
+		<avp name="OC-Feature-Vector" code="622" mandatory="may">
 			<type type-name="Unsigned64"/>
 		</avp>
 		<avp name="OC-OLR" code="623" mandatory="may">
@@ -7990,5 +7991,6 @@
 	&CiscoSystems;
 	&Juniper;
 	&Inovar;
+	&Huawei;
 	&Custom;
 </dictionary>

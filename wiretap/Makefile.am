@@ -218,8 +218,7 @@ DISTCLEANFILES = \
 	version_info.c
 
 MAINTAINERCLEANFILES = \
-	$(GENERATED_FILES)	\
-	Makefile.in
+	$(GENERATED_FILES)
 
 BUILT_SOURCES = $(GENERATED_HEADER_FILES) version_info.c
 
@@ -238,38 +237,10 @@ ascend_scanner_lex.h : ascend_scanner.c
 ascend.h: ascend.c
 
 ascend.c: $(srcdir)/ascend.y ascend_scanner_lex.h
-	@if [ -z "$(YACC)" ]; then \
-		echo "Neither bison nor byacc has been found"; \
-		exit 1; \
-	fi
 	$(AM_V_YACC)$(YACC) -d -p ascend -o ascend.c $(srcdir)/ascend.y
 
 version_info.c: $(top_srcdir)/version_info.c
-	$(AM_V_LN_S)$(LN_S) $<
-
-# ABI compliance checker can be obtained from
-# http://ispras.linux-foundation.org/index.php/ABI_compliance_checker
-# Checked using version 1.21.12
-#
-# (f)lex generated headers are not part of API and may not include
-# all needed headers for used types
-dumpabi-libwiretap: all abi-descriptor.xml
-	rm -rf abi-check-headers abi_dumps .libs/*.abi.tar.gz
-	mkdir abi-check-headers
-	cp *.h ../ws_symbol_export.h abi-check-headers/
-	rm abi-check-headers/*_lex.h abi-check-headers/ascend.h
-	abi-compliance-checker -log-path abi_logs/log.txt -l libwiretap -v1 `readlink .libs/libwiretap.so | sed 's/.*\.so\.//'` \
-		-relpath $(abs_srcdir) -dump-abi abi-descriptor.xml || \
-		cat abi_logs/log.txt
-	cp -f abi_dumps/libwiretap/libwiretap_* .libs/
-	cd .libs && ln -sf libwiretap_*.abi.tar.gz libwiretap.abi.tar.gz
-
-maintainer-clean-local: clean-dumpabi-libwiretap
-
-.PHONY: clean-dumpabi-libwiretap
-
-clean-dumpabi-libwiretap:
-	rm -rf abi-check-headers abi_dumps .libs/*.abi.tar.gz abi_logs abi-descriptor.xml
+	$(AM_V_LN_S)$(LN_S) $< $(builddir)
 
 checkapi:
 ## 'abort' checking disabled for now pending resolution of existing use of g_assert & g_error

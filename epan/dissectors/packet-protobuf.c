@@ -185,13 +185,13 @@ protobuf_find_field_info(const gchar* call_path_direction_type, int field_number
  * value (for instance, -1) have a small varint encoded value too. (refers to protobuf spec)
  *      sint32 encoded using   (n << 1) ^ (n >> 31)
  */
-gint32
+static gint32
 sint32_decode(guint32 sint32) {
     return (sint32 >> 1) ^ ((gint32)sint32 << 31 >> 31);
 }
 
 /* sint64 encoded using   (n << 1) ^ (n >> 63) */
-gint64
+static gint64
 sint64_decode(guint64 sint64) {
     return (sint64 >> 1) ^ ((gint64)sint64 << 63 >> 63);
 }
@@ -335,7 +335,7 @@ protobuf_dissect_field_value(proto_tree *value_tree, tvbuff_t *tvb, guint offset
     case PROTOBUF_TYPE_UINT32:
     case PROTOBUF_TYPE_FIXED32: /* same as UINT32 */
         proto_tree_add_uint(value_tree, hf_protobuf_value_uint32, tvb, offset, length, (guint32)value);
-        proto_item_append_text(ti_field, "%s %lu", prepend_text, value);
+        proto_item_append_text(ti_field, "%s %u", prepend_text, (guint32)value);
         break;
 
     case PROTOBUF_TYPE_SINT32:

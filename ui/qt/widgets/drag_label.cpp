@@ -1,4 +1,4 @@
-/* inet_aton.h
+/* drag_label.cpp
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -19,34 +19,35 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <ui/qt/widgets/drag_label.h>
+
+#include <QLayout>
+
+DragLabel::DragLabel(QString txt, QWidget * parent)
+: QLabel(txt, parent)
+{
+    setAutoFillBackground(true);
+    setFrameShape(QFrame::Panel);
+    setFrameShadow(QFrame::Raised);
+    setAttribute(Qt::WA_DeleteOnClose);
+    setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
+
+    adjustSize();
+}
+
+DragLabel::~DragLabel() {
+    // TODO Auto-generated destructor stub
+}
+
 /*
- * Version of "inet_aton()", for the benefit of OSes that don't have it.
+ * Editor modelines
+ *
+ * Local Variables:
+ * c-basic-offset: 4
+ * tab-width: 8
+ * indent-tabs-mode: nil
+ * End:
+ *
+ * ex: set shiftwidth=4 tabstop=8 expandtab:
+ * :indentSize=4:tabSize=8:noTabs=true:
  */
-
-#ifndef __INET_ATON_H__
-#define __INET_ATON_H__
-
-#include "ws_symbol_export.h"
-
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>     /* needed to define AF_ values on UNIX */
-#endif
-
-#ifdef HAVE_NETINET_IN_H
-# include <netinet/in.h>
-#endif
-
-#ifdef HAVE_ARPA_INET_H
-#include <arpa/inet.h>
-#endif
-
-#ifdef HAVE_WINSOCK2_H
-#include <winsock2.h>
-#endif
-
-#ifndef HAVE_INET_ATON
-struct in_addr;
-WS_DLL_PUBLIC int inet_aton(const char* cp_arg, struct in_addr *addr);
-#endif
-
-#endif

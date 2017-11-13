@@ -954,17 +954,8 @@ header_fields_copy_cb(void* n, const void* o, size_t siz _U_)
     header_field_t* new_rec = (header_field_t*)n;
     const header_field_t* old_rec = (const header_field_t*)o;
 
-    if (old_rec->header_name) {
-        new_rec->header_name = g_strdup(old_rec->header_name);
-    } else {
-        new_rec->header_name = NULL;
-    }
-
-    if (old_rec->header_desc) {
-        new_rec->header_desc = g_strdup(old_rec->header_desc);
-    } else {
-        new_rec->header_desc = NULL;
-    }
+    new_rec->header_name = g_strdup(old_rec->header_name);
+    new_rec->header_desc = g_strdup(old_rec->header_desc);
 
     return new_rec;
 }
@@ -1078,23 +1069,9 @@ authorization_users_copy_cb(void* n, const void* o, size_t siz _U_)
     authorization_user_t* new_rec = (authorization_user_t*)n;
     const authorization_user_t* old_rec = (const authorization_user_t*)o;
 
-    if (old_rec->username) {
-        new_rec->username = g_strdup(old_rec->username);
-    } else {
-        new_rec->username = NULL;
-    }
-
-    if (old_rec->realm) {
-        new_rec->realm = g_strdup(old_rec->realm);
-    } else {
-        new_rec->realm = NULL;
-    }
-
-    if (old_rec->password) {
-        new_rec->password = g_strdup(old_rec->password);
-    } else {
-        new_rec->password = NULL;
-    }
+    new_rec->username = g_strdup(old_rec->username);
+    new_rec->realm = g_strdup(old_rec->realm);
+    new_rec->password = g_strdup(old_rec->password);
 
     return new_rec;
 }
@@ -7283,7 +7260,8 @@ proto_reg_handoff_sip(void)
         ssl_dissector_delete(saved_sip_tls_port, sip_tcp_handle);
     }
     /* Set our port number for future use */
-    ssl_dissector_add(saved_sip_tls_port, sip_tcp_handle);
+    ssl_dissector_add(sip_tls_port, sip_tcp_handle);
+    saved_sip_tls_port = sip_tls_port;
 
     exported_pdu_tap = find_tap_id(EXPORT_PDU_TAP_NAME_LAYER_7);
 }

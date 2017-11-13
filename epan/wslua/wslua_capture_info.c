@@ -90,8 +90,7 @@ WSLUA_METAMETHOD CaptureInfo__tostring(lua_State* L) {
 
 static int CaptureInfo__gc(lua_State* L) {
     CaptureInfo fc = toCaptureInfo(L,1);
-    if (fc)
-        g_free(fc);
+    g_free(fc);
     return 0;
 }
 
@@ -157,7 +156,7 @@ static int CaptureInfo_set_hosts(lua_State* L) {
     size_t addr_len = 0;
     size_t name_len = 0;
     guint32 v4_addr = 0;
-    struct e_in6_addr v6_addr = { {0} };
+    ws_in6_addr v6_addr = { {0} };
 
     if (!wth->add_new_ipv4 || !wth->add_new_ipv6) {
         return luaL_error(L, "CaptureInfo wtap has no IPv4 or IPv6 name resolution");
@@ -484,8 +483,7 @@ static int CaptureInfoConst_set_private_table(lua_State* L) {
 
 static int CaptureInfoConst__gc(lua_State* L) {
     CaptureInfoConst fi = toCaptureInfoConst(L,1);
-    if (fi)
-        g_free(fi);
+    g_free(fi);
     return 0;
 }
 

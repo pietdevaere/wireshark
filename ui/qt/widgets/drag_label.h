@@ -1,5 +1,4 @@
-/* asm_utils.h
- * Functions optionally implemented in assembler
+/* drag_label.h
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -20,17 +19,34 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef __ASM_UTILS_H__
-#define __ASM_UTILS_H__
+#ifndef UI_QT_WIDGETS_DRAG_LABEL_H_
+#define UI_QT_WIDGETS_DRAG_LABEL_H_
 
-gint wrs_strcmp(gconstpointer a, gconstpointer b);
-gint wrs_strcmp_with_data(gconstpointer a, gconstpointer b, gpointer user_data);
-gboolean wrs_str_equal(gconstpointer a, gconstpointer b);
+#include <QLabel>
+#include <QDrag>
+#include <QMimeData>
+#include <QMouseEvent>
 
-guchar wrs_check_charset(const guchar table[256], const char *str);
+class DragLabel: public QLabel
+{
+    Q_OBJECT
 
-guint wrs_str_hash(gconstpointer v);
+public:
+    explicit DragLabel(QString text, QWidget * parent = 0);
+    virtual ~DragLabel();
+};
 
-/* int wrs_count_bitshift(guint32 bitmask); */
+#endif /* UI_QT_WIDGETS_DRAG_LABEL_H_ */
 
-#endif  /* __ASM_UTILS_H__ */
+/*
+ * Editor modelines
+ *
+ * Local Variables:
+ * c-basic-offset: 4
+ * tab-width: 8
+ * indent-tabs-mode: nil
+ * End:
+ *
+ * ex: set shiftwidth=4 tabstop=8 expandtab:
+ * :indentSize=4:tabSize=8:noTabs=true:
+ */

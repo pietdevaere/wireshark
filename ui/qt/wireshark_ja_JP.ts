@@ -108,7 +108,7 @@
     </message>
     <message>
         <source>Copy Rows</source>
-        <translation>列をコピー</translation>
+        <translation>行をコピー</translation>
     </message>
     <message>
         <source>Copy All</source>
@@ -247,15 +247,15 @@
     </message>
     <message>
         <source>Copy Cell</source>
-        <translation type="unfinished">セルをコピー</translation>
+        <translation>セルをコピー</translation>
     </message>
     <message>
         <source>Copy Rows</source>
-        <translation type="unfinished">列をコピー</translation>
+        <translation>行をコピー</translation>
     </message>
     <message>
         <source>Copy All</source>
-        <translation type="unfinished">すべてをコピー</translation>
+        <translation>すべてをコピー</translation>
     </message>
     <message>
         <source>Save as image</source>
@@ -362,7 +362,7 @@
     </message>
     <message>
         <source>Copy Rows</source>
-        <translation>列をコピー</translation>
+        <translation>行をコピー</translation>
     </message>
     <message>
         <source>Copy All</source>
@@ -553,7 +553,7 @@
     </message>
     <message>
         <source>Copy Rows</source>
-        <translation>列をコピー</translation>
+        <translation>行をコピー</translation>
     </message>
     <message>
         <source>Copy All</source>
@@ -611,15 +611,7 @@
     <name>ByteViewText</name>
     <message>
         <source>Show bytes as hexadecimal</source>
-        <translation>16進数でバイト列を表示</translation>
-    </message>
-    <message>
-        <source>Byte %1</source>
-        <translation>バイト %1</translation>
-    </message>
-    <message>
-        <source>Bytes %1-%2</source>
-        <translation>バイト %1-%2</translation>
+        <translation type="vanished">16進数でバイト列を表示</translation>
     </message>
 </context>
 <context>
@@ -1356,6 +1348,14 @@ PLEASE NOTE: One option MUST be selected.</source>
     <message>
         <source>Background</source>
         <translation>背景色</translation>
+    </message>
+    <message>
+        <source>Set the display filter using this rule.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apply as filter</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Coloring Rules</source>
@@ -2156,7 +2156,7 @@ PLEASE NOTE: One option MUST be selected.</source>
     </message>
     <message>
         <source>Copy</source>
-        <translation type="unfinished">コピー</translation>
+        <translation>コピー</translation>
     </message>
     <message>
         <source>IPv4 source address.</source>
@@ -4868,6 +4868,22 @@ PLEASE NOTE: One option MUST be selected.</source>
         <translation>エキスパート情報はありません</translation>
     </message>
     <message>
+        <source>, 1 byte</source>
+        <translation type="unfinished">, 1 バイト</translation>
+    </message>
+    <message>
+        <source>, %1 bytes</source>
+        <translation type="unfinished">, %1 バイト</translation>
+    </message>
+    <message>
+        <source>Byte %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bytes %1-%2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Profile: </source>
         <translation>プロファイル:</translation>
     </message>
@@ -7491,7 +7507,11 @@ a:hover {
     <name>PacketCommentDialog</name>
     <message>
         <source>Packet Comment</source>
-        <translation>パケットコメント</translation>
+        <translation type="vanished">パケットコメント</translation>
+    </message>
+    <message>
+        <source>Packet %1 Comment</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -7511,6 +7531,14 @@ a:hover {
     <message>
         <source>[%1 closed] </source>
         <translation>[%1 を綴じました] </translation>
+    </message>
+    <message>
+        <source>Byte %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bytes %1-%2</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -7887,11 +7915,11 @@ a:hover {
     </message>
     <message>
         <source>, 1 byte</source>
-        <translation>, 1 バイト</translation>
+        <translation type="vanished">, 1 バイト</translation>
     </message>
     <message>
         <source>, %1 bytes</source>
-        <translation>, %1 バイト</translation>
+        <translation type="vanished">, %1 バイト</translation>
     </message>
 </context>
 <context>
@@ -11703,6 +11731,10 @@ a:hover {
         <translation>このエントリをコピーします</translation>
     </message>
     <message>
+        <source>Clear all entries.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Unknown User Accessible Table</source>
         <translation>ユーザがアクセスできる表が不明</translation>
     </message>
@@ -11728,6 +11760,10 @@ a:hover {
     <message>
         <source>Copy this entry.</source>
         <translation type="unfinished">このエントリをコピーします</translation>
+    </message>
+    <message>
+        <source>Clear all entries.</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Unknown User Accessible Table</source>

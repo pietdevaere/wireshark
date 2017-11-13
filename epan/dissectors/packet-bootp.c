@@ -124,7 +124,6 @@
 #include <epan/addr_resolv.h>
 #include <epan/expert.h>
 #include <epan/uat.h>
-#include <epan/oui.h>
 #include <epan/strutil.h>
 #include <wsutil/str_util.h>
 #include <wsutil/strtoi.h>
@@ -1487,11 +1486,7 @@ static void* uat_bootp_record_copy_cb(void* n, const void* o, size_t siz _U_) {
 	uat_bootp_record_t* new_record = (uat_bootp_record_t *)n;
 	const uat_bootp_record_t* old_record = (const uat_bootp_record_t *)o;
 
-	if (old_record->text) {
-		new_record->text = g_strdup(old_record->text);
-	} else {
-		new_record->text = NULL;
-	}
+	new_record->text = g_strdup(old_record->text);
 
 	return new_record;
 }
@@ -1509,7 +1504,7 @@ static gboolean uat_bootp_record_update_cb(void* r, char** err) {
 static void uat_bootp_record_free_cb(void*r) {
 	uat_bootp_record_t* rec = (uat_bootp_record_t *)r;
 
-	if (rec->text) g_free(rec->text);
+	g_free(rec->text);
 }
 
 UAT_DEC_CB_DEF(uat_bootp_records, opt, uat_bootp_record_t)
@@ -8524,7 +8519,7 @@ proto_register_bootp(void)
 
 		{ &hf_bootp_option125_tr111_device_manufacturer_oui,
 		  { "DeviceManufacturerOUI", "bootp.option.vi.tr111.device_manufacturer_oui",
-		    FT_UINT24, BASE_HEX, VALS(oui_vals), 0x0,
+		    FT_UINT24, BASE_OUI, NULL, 0x0,
 		    "Option 125:TR 111 1 DeviceManufacturerOUI", HFILL }},
 
 		{ &hf_bootp_option125_tr111_device_serial_number,

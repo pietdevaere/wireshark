@@ -179,30 +179,63 @@ static void plugin_if_mainwindow_get_ws_info(gconstpointer user_data)
 
     ws_info->ws_info_supported = true;
 
-    if (cf) {
-        ws_info->cf_state = cf->state;
-        ws_info->cf_count = cf->count;
-
+    /* If we have a filename attached to ws_info clear it */
+    if (ws_info->cf_filename != NULL)
+    {
         g_free(ws_info->cf_filename);
-        ws_info->cf_filename = g_strdup(cf->filename);
+        ws_info->cf_filename = NULL;
+    }
+
+    /* Determine the true state of the capture file.  We return the true state in
+    the ws_info structure and DON'T CHANGE the cf->state as we don't want to cause problems
+    with code that follows this. */
+    if (cf)
+    {
+        if (cf->filename)
+        {
+            /* As we have a cf->filename we'll use the name and the state */
+            ws_info->cf_filename = g_strdup(cf->filename);
+            ws_info->cf_state = cf->state;
+        }
+        else
+        {
+            /* When we come through here the cf->state can show FILE_READ_DONE even though the
+            file is actually closed (no filename). A better fix would be to have a
+            FILE_CLOSE_PENDING state but that involves a lot of code change elsewhere. */
+            ws_info->cf_state = FILE_CLOSED;
+        }
+    }
+
+    if (!ws_info->cf_filename)
+    {
+        /* We may have a filename associated with the main window so let's use it */
+        QString fileNameString = gbl_cur_main_window_->getMwFileName();
+        if (fileNameString.length())
+        {
+            QByteArray ba = fileNameString.toLatin1();
+            const char *c_file_name = ba.data();
+            ws_info->cf_filename = g_strdup(c_file_name);
+        }
+    }
+
+    if (cf) {
+        ws_info->cf_count = cf->count;
 
         if (cf->state == FILE_READ_DONE && cf->current_frame) {
             ws_info->cf_framenr = cf->current_frame->num;
             ws_info->frame_passed_dfilter = (cf->current_frame->flags.passed_dfilter == 1);
-        } else {
+        }
+        else {
             ws_info->cf_framenr = 0;
             ws_info->frame_passed_dfilter = FALSE;
         }
-    } else if (ws_info->cf_state != FILE_CLOSED) {
-        /* Initialise the ws_info structure */
+    }
+    else
+    {
+        /* Initialise the other ws_info structure values */
         ws_info->cf_count = 0;
-
-        g_free(ws_info->cf_filename);
-        ws_info->cf_filename = NULL;
-
         ws_info->cf_framenr = 0;
         ws_info->frame_passed_dfilter = FALSE;
-        ws_info->cf_state = FILE_CLOSED;
     }
 }
 
@@ -387,6 +420,8 @@ MainWindow::MainWindow(QWidget *parent) :
             this, SLOT(filterToolbarCustomMenuHandler(QPoint)));
     connect(filter_expression_toolbar_, SIGNAL(actionMoved(QAction*, int, int)),
             this, SLOT(filterToolbarActionMoved(QAction*, int, int)));
+    connect(filter_expression_toolbar_, SIGNAL(newFilterDropped(QString, QString)),
+            this, SLOT(filterDropped(QString, QString)));
 
     main_ui_->displayFilterToolBar->addWidget(filter_expression_toolbar_);
 
@@ -460,23 +495,32 @@ MainWindow::MainWindow(QWidget *parent) :
 
     packet_list_ = new PacketList(&master_split_);
     main_ui_->wirelessTimelineWidget->setPacketList(packet_list_);
-    connect(packet_list_, SIGNAL(packetSelectionChanged()),
-            main_ui_->wirelessTimelineWidget, SLOT(packetSelectionChanged()));
+    connect(packet_list_, SIGNAL(fieldSelected(FieldInformation *)),
+            this, SIGNAL(fieldSelected(FieldInformation *)));
+    connect(packet_list_, SIGNAL(frameSelected(int)),
+            this, SIGNAL(frameSelected(int)));
     connect(packet_list_->packetListModel(), SIGNAL(bgColorizationProgress(int,int)),
             main_ui_->wirelessTimelineWidget, SLOT(bgColorizationProgress(int,int)));
-    connect(packet_list_, SIGNAL(packetSelectionChanged()),
-            main_ui_->statusBar, SLOT(packetSelectionChanged()));
 
     proto_tree_ = new ProtoTree(&master_split_);
     proto_tree_->installEventFilter(this);
 
-    byte_view_tab_ = new ByteViewTab(&master_split_);
-
     packet_list_->setProtoTree(proto_tree_);
-    packet_list_->setByteViewTab(byte_view_tab_);
     packet_list_->installEventFilter(this);
 
     main_welcome_ = main_ui_->welcomePage;
+
+    connect(proto_tree_, SIGNAL(fieldSelected(FieldInformation *)),
+            this, SIGNAL(fieldSelected(FieldInformation *)));
+    connect(this, SIGNAL(fieldSelected(FieldInformation *)),
+            proto_tree_, SLOT(selectedFieldChanged(FieldInformation *)));
+    connect(this, SIGNAL(fieldHighlight(FieldInformation *)),
+            main_ui_->statusBar, SLOT(highlightedFieldChanged(FieldInformation *)));
+    connect(this, SIGNAL(fieldSelected(FieldInformation *)),
+            main_ui_->statusBar, SLOT(selectedFieldChanged(FieldInformation *)));
+
+
+    createByteViewDialog();
 
     // Packet list and proto tree must exist before these are called.
     setMenusForSelectedPacket();
@@ -610,6 +654,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(main_ui_->filterExpressionFrame, SIGNAL(filterExpressionsChanged()),
             this, SLOT(filterExpressionsChanged()));
 
+    /* Connect change of capture file */
     connect(this, SIGNAL(setCaptureFile(capture_file*)),
             main_ui_->searchFrame, SLOT(setCaptureFile(capture_file*)));
     connect(this, SIGNAL(setCaptureFile(capture_file*)),
@@ -617,14 +662,16 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(this, SIGNAL(setCaptureFile(capture_file*)),
             packet_list_, SLOT(setCaptureFile(capture_file*)));
     connect(this, SIGNAL(setCaptureFile(capture_file*)),
-            byte_view_tab_, SLOT(setCaptureFile(capture_file*)));
+            proto_tree_, SLOT(setCaptureFile(capture_file*)));
+    connect(this, SIGNAL(frameSelected(int)),
+            main_ui_->wirelessTimelineWidget, SLOT(selectedFrameChanged(int)));
+    connect(this, SIGNAL(frameSelected(int)),
+            main_ui_->statusBar, SLOT(selectedFrameChanged(int)));
 
-    connect(this, SIGNAL(monospaceFontChanged(QFont)),
+    connect(wsApp, SIGNAL(zoomMonospaceFont(QFont)),
             packet_list_, SLOT(setMonospaceFont(QFont)));
-    connect(this, SIGNAL(monospaceFontChanged(QFont)),
+    connect(wsApp, SIGNAL(zoomMonospaceFont(QFont)),
             proto_tree_, SLOT(setMonospaceFont(QFont)));
-    connect(this, SIGNAL(monospaceFontChanged(QFont)),
-            byte_view_tab_, SLOT(setMonospaceFont(QFont)));
 
     connect(main_ui_->actionGoNextPacket, SIGNAL(triggered()),
             packet_list_, SLOT(goNextPacket()));
@@ -646,8 +693,8 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(main_ui_->actionViewCollapseAll, SIGNAL(triggered()),
             proto_tree_, SLOT(collapseAll()));
 
-    connect(packet_list_, SIGNAL(packetSelectionChanged()),
-            this, SLOT(setMenusForSelectedPacket()));
+    connect(packet_list_, SIGNAL(frameSelected(int)),
+            this, SIGNAL(frameSelected(int)));
     connect(packet_list_, SIGNAL(packetDissectionChanged()),
             this, SLOT(redissectPackets()));
     connect(packet_list_, SIGNAL(showColumnPreferences(PreferencesDialog::PreferencesPane)),
@@ -674,21 +721,18 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(packet_list_->packetListModel(), SIGNAL(popProgressStatus()),
             main_ui_->statusBar, SLOT(popProgressStatus()));
 
-    connect(proto_tree_, SIGNAL(protoItemSelected(const QString&)),
-            main_ui_->statusBar, SLOT(pushFieldStatus(const QString&)));
-    connect(proto_tree_, SIGNAL(protoItemSelected(field_info *)),
-            this, SLOT(setMenusForSelectedTreeRow(field_info *)));
+    connect(proto_tree_, SIGNAL(fieldSelected(FieldInformation *)),
+            this, SIGNAL(fieldSelected(FieldInformation *)));
+    connect(this, SIGNAL(fieldSelected(FieldInformation *)),
+            main_ui_->statusBar, SLOT(selectedFieldChanged(FieldInformation *)));
+    connect(this, SIGNAL(fieldSelected(FieldInformation *)),
+            this, SLOT(setMenusForSelectedTreeRow(FieldInformation *)));
     connect(proto_tree_, SIGNAL(openPacketInNewWindow(bool)),
             this, SLOT(openPacketDialog(bool)));
     connect(proto_tree_, SIGNAL(showProtocolPreferences(QString)),
             this, SLOT(showPreferencesDialog(QString)));
     connect(proto_tree_, SIGNAL(editProtocolPreference(preference*,pref_module*)),
             main_ui_->preferenceEditorFrame, SLOT(editPreference(preference*,pref_module*)));
-
-    connect(byte_view_tab_, SIGNAL(byteFieldHovered(const QString&)),
-            main_ui_->statusBar, SLOT(pushByteStatus(const QString&)));
-    connect(byte_view_tab_, SIGNAL(currentChanged(int)),
-            this, SLOT(byteViewTabChanged(int)));
 
     connect(main_ui_->statusBar, SIGNAL(showExpertInfo()),
             this, SLOT(on_actionAnalyzeExpertInfo_triggered()));
@@ -1276,8 +1320,7 @@ void MainWindow::mergeCaptureFile()
         g_free(in_filenames[1]);
 
         if (merge_status != CF_OK) {
-            if (rfcode != NULL)
-                dfilter_free(rfcode);
+            dfilter_free(rfcode);
             g_free(tmpname);
             continue;
         }
@@ -1289,8 +1332,7 @@ void MainWindow::mergeCaptureFile()
         if (cf_open(CaptureFile::globalCapFile(), tmpname, WTAP_TYPE_AUTO, TRUE /* temporary file */, &err) != CF_OK) {
             /* We couldn't open it; fail. */
             CaptureFile::globalCapFile()->window = NULL;
-            if (rfcode != NULL)
-                dfilter_free(rfcode);
+            dfilter_free(rfcode);
             g_free(tmpname);
             return;
         }
@@ -1891,6 +1933,9 @@ bool MainWindow::testCaptureFileClose(QString before_what, FileCloseContext cont
             return true;
         }
 #endif
+        /* Clear MainWindow file name details */
+        gbl_cur_main_window_->setMwFileName("");
+
         /* captureStop() will close the file if not having any packets */
         if (capture_file_.capFile() && context != Restart && context != Reload)
             // Don't really close if Restart or Reload
@@ -2830,6 +2875,21 @@ void MainWindow::removeAdditionalToolbar(QString toolbarName)
 
 }
 
+QString MainWindow::getMwFileName()
+{
+    return mwFileName_;
+}
+
+void MainWindow::setMwFileName(QString fileName)
+{
+    mwFileName_ = fileName;
+    return;
+}
+
+void MainWindow::createByteViewDialog()
+{
+    byte_view_tab_ = new ByteViewTab(&master_split_);
+}
 
 /*
  * Editor modelines

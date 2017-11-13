@@ -43,7 +43,7 @@
 #include "ui/recent.h"
 #include "ui/simple_dialog.h"
 #include <wsutil/utf8_entities.h>
-#include "ui/ui_util.h"
+#include "ui/ws_ui_util.h"
 
 #include "ui/gtk/gui_utils.h"
 #include "ui/gtk/color_utils.h"
@@ -1123,8 +1123,7 @@ fill_capture_box(void)
             label_text = g_strdup_printf("Error = %d; this \"can't happen\".", error);
             break;
         }
-        if (err_str != NULL)
-            g_free(err_str);
+        g_free(err_str);
         w = gtk_label_new(label_text);
         gtk_label_set_markup(GTK_LABEL(w), label_text);
         gtk_label_set_line_wrap(GTK_LABEL(w), TRUE);

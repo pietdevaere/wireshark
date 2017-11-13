@@ -7,19 +7,7 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * SPDX-License-Identifier: GPL-2.0+
  */
 #include "config.h"
 
@@ -33,6 +21,7 @@
 #include <wsutil/strtoi.h>
 #include <wsutil/filesystem.h>
 #include <wsutil/cmdarg_err.h>
+#include <wsutil/inet_addr.h>
 
 #include "ui/failure_message.h"
 
@@ -278,18 +267,18 @@ struct extcap_dumper {
 static int endless_loop = 1;
 
 /* Functions */
-static inline int is_specified_interface(char *interface, const char *interface_prefix) {
+static inline int is_specified_interface(const char *interface, const char *interface_prefix) {
     return !strncmp(interface, interface_prefix, strlen(interface_prefix));
 }
 
-static gboolean is_logcat_interface(char *interface) {
+static gboolean is_logcat_interface(const char *interface) {
     return is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_MAIN) ||
            is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_SYSTEM) ||
            is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_RADIO) ||
            is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_EVENTS);
 }
 
-static gboolean is_logcat_text_interface(char *interface) {
+static gboolean is_logcat_text_interface(const char *interface) {
     return is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_TEXT_MAIN) ||
            is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_TEXT_SYSTEM) ||
            is_specified_interface(interface, INTERFACE_ANDROID_LOGCAT_TEXT_RADIO) ||
@@ -539,7 +528,7 @@ static socket_handle_t adb_connect(const char *server_ip, unsigned short *server
 
     server.sin_family = AF_INET;
     server.sin_port = GINT16_TO_BE(*server_tcp_port);
-    server.sin_addr.s_addr = inet_addr(server_ip);
+    ws_inet_pton4(server_ip, &(server.sin_addr.s_addr));
 
     if ((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET) {
         g_warning("Cannot open system TCP socket: %s", strerror(errno));
@@ -879,6 +868,21 @@ static void new_interface(extcap_parameters * extcap_conf, const gchar *interfac
     }
     g_free(interface);
     g_free(ifdisplay);
+}
+
+
+static void new_fake_interface_for_list_dlts(extcap_parameters * extcap_conf,
+        const gchar *ifname)
+{
+    if (is_specified_interface(ifname, INTERFACE_ANDROID_BLUETOOTH_HCIDUMP) ||
+            is_specified_interface(ifname, INTERFACE_ANDROID_BLUETOOTH_EXTERNAL_PARSER) ||
+            is_specified_interface(ifname, INTERFACE_ANDROID_BLUETOOTH_BTSNOOP_NET)) {
+        extcap_base_register_interface_ext(extcap_conf, ifname, ifname, 99, "BluetoothH4", "Bluetooth HCI UART transport layer plus pseudo-header" );
+    } else if (is_logcat_interface(ifname) || is_logcat_text_interface(ifname)) {
+        extcap_base_register_interface(extcap_conf, ifname, ifname, 252, "Upper PDU" );
+    } else if (is_specified_interface(ifname, INTERFACE_ANDROID_TCPDUMP)) {
+        extcap_base_register_interface(extcap_conf, ifname, ifname, 1, "Ethernet");
+    }
 }
 
 
@@ -1665,7 +1669,7 @@ static int capture_android_bluetooth_external_parser(char *interface,
         memset(&server, 0 , sizeof(server));
         server.sin_family = AF_INET;
         server.sin_port = GINT16_TO_BE(*bt_local_tcp_port);
-        server.sin_addr.s_addr = inet_addr(bt_local_ip);
+        ws_inet_pton4(bt_local_ip, &(server.sin_addr.s_addr));
 
         useSndTimeout(sock);
 
@@ -1740,7 +1744,7 @@ static int capture_android_bluetooth_external_parser(char *interface,
 
                 server.sin_family = AF_INET;
                 server.sin_port = GINT16_TO_BE(*bt_local_tcp_port);
-                server.sin_addr.s_addr = inet_addr(bt_local_ip);
+                ws_inet_pton4(bt_local_ip, &(server.sin_addr.s_addr));
 
                 useSndTimeout(sock);
 
@@ -2746,6 +2750,18 @@ int main(int argc, char **argv) {
 
     if (extcap_conf->do_list_interfaces)
         register_interfaces(extcap_conf, adb_server_ip, adb_server_tcp_port);
+
+    /* NOTE:
+     * extcap implementation calls androiddump --extcap-dlts for each interface.
+     * The only way to know whether an interface exists or not is to go through the
+     * whole process of listing all interfaces (i.e. calling register_interfaces
+     * function). Since being a system resource heavy operation and repeated for
+     * each interface instead register a fake interface to be returned for dlt
+     * listing only purpose
+     */
+    if (extcap_conf->do_list_dlts) {
+        new_fake_interface_for_list_dlts(extcap_conf, extcap_conf->interface);
+    }
 
     if (extcap_base_handle_interface(extcap_conf)) {
         ret = EXIT_CODE_SUCCESS;

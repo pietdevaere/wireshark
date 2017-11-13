@@ -83,7 +83,7 @@ DIAG_ON(frame-larger-than=)
 #include "ui/recent.h"
 #include "ui/recent_utils.h"
 #include "ui/ssl_key_export.h"
-#include "ui/ui_util.h"
+#include "ui/ws_ui_util.h"
 #include "ui/all_files_wildcard.h"
 #include "ui/qt/simple_dialog.h"
 
@@ -242,6 +242,9 @@ bool MainWindow::openCaptureFile(QString cf_path, QString read_filter, unsigned 
             }
         }
 
+        /* Make the file name available via MainWindow */
+        setMwFileName(cf_path);
+
         /* Try to open the capture file. This closes the current file if it succeeds. */
         CaptureFile::globalCapFile()->window = this;
         if (cf_open(CaptureFile::globalCapFile(), cf_path.toUtf8().constData(), type, is_tempfile, &err) != CF_OK) {
@@ -250,8 +253,7 @@ bool MainWindow::openCaptureFile(QString cf_path, QString read_filter, unsigned 
                dismiss the alert box popped up for the open error,
                try again. */
             CaptureFile::globalCapFile()->window = NULL;
-            if (rfcode != NULL)
-                dfilter_free(rfcode);
+            dfilter_free(rfcode);
             cf_path.clear();
             continue;
         }
@@ -1381,7 +1383,7 @@ void MainWindow::setMenusForSelectedPacket()
     main_ui_->actionTelephonyLteRlcGraph->setEnabled(is_lte_rlc);
 }
 
-void MainWindow::setMenusForSelectedTreeRow(field_info *fi) {
+void MainWindow::setMenusForSelectedTreeRow(FieldInformation *finfo) {
 
     bool can_match_selected = false;
     bool is_framenum = false;
@@ -1391,6 +1393,10 @@ void MainWindow::setMenusForSelectedTreeRow(field_info *fi) {
     bool have_packet_bytes = false;
     QByteArray field_filter;
     int field_id = -1;
+
+    field_info * fi = 0;
+    if ( finfo )
+        fi = finfo->fieldInfo();
 
     if (capture_file_.capFile()) {
         capture_file_.capFile()->finfo_selected = fi;
@@ -1625,8 +1631,8 @@ void MainWindow::showColumnEditor(int column)
 {
     previous_focus_ = wsApp->focusWidget();
     connect(previous_focus_, SIGNAL(destroyed()), this, SLOT(resetPreviousFocus()));
-    showAccordionFrame(main_ui_->columnEditorFrame);
     main_ui_->columnEditorFrame->editColumn(column);
+    showAccordionFrame(main_ui_->columnEditorFrame);
 }
 
 void MainWindow::showPreferenceEditor()
@@ -1778,15 +1784,6 @@ void MainWindow::openTapParameterDialog()
 
     const QString cfg_str = tpa->data().toString();
     openTapParameterDialog(cfg_str, NULL, NULL);
-}
-
-void MainWindow::byteViewTabChanged(int tab_index)
-{
-    QWidget *new_tab = byte_view_tab_->widget(tab_index);
-    if (new_tab) {
-        setTabOrder(proto_tree_, new_tab);
-        setTabOrder(new_tab, df_combo_box_->lineEdit()); // XXX Toolbar instead?
-    }
 }
 
 #ifdef HAVE_SOFTWARE_UPDATE
@@ -2240,7 +2237,7 @@ void MainWindow::on_actionEditTimeShift_triggered()
 
 void MainWindow::on_actionEditPacketComment_triggered()
 {
-    PacketCommentDialog pc_dialog(this, packet_list_->packetComment());
+    PacketCommentDialog pc_dialog(capture_file_.capFile()->current_frame->num, this, packet_list_->packetComment());
     if (pc_dialog.exec() == QDialog::Accepted) {
         packet_list_->setPacketComment(pc_dialog.text());
         updateForUnsavedChanges();
@@ -2460,14 +2457,7 @@ void MainWindow::on_actionViewNameResolutionTransport_triggered()
 
 void MainWindow::zoomText()
 {
-    // Scale by 10%, rounding to nearest half point, minimum 1 point.
-    // XXX Small sizes repeat. It might just be easier to create a map of multipliers.
-    mono_font_ = QFont(wsApp->monospaceFont());
-    qreal zoom_size = wsApp->monospaceFont().pointSize() * 2 * qPow(qreal(1.1), recent.gui_zoom_level);
-    zoom_size = qRound(zoom_size) / qreal(2.0);
-    zoom_size = qMax(zoom_size, qreal(1.0));
-    mono_font_.setPointSizeF(zoom_size);
-    emit monospaceFontChanged(mono_font_);
+    wsApp->zoomTextFont(recent.gui_zoom_level);
 }
 
 void MainWindow::on_actionViewZoomIn_triggered()
@@ -2499,6 +2489,8 @@ void MainWindow::on_actionViewColoringRules_triggered()
     ColoringRulesDialog coloring_rules_dialog(this);
     connect(&coloring_rules_dialog, SIGNAL(accepted()),
             packet_list_, SLOT(recolorPackets()));
+    connect(&coloring_rules_dialog, SIGNAL(filterAction(QString,FilterAction::Action,FilterAction::ActionType)),
+            this, SIGNAL(filterAction(QString,FilterAction::Action,FilterAction::ActionType)));
     coloring_rules_dialog.exec();
 }
 
@@ -2521,6 +2513,8 @@ void MainWindow::colorizeConversation(bool create_rule)
             ColoringRulesDialog coloring_rules_dialog(this, filter);
             connect(&coloring_rules_dialog, SIGNAL(accepted()),
                     packet_list_, SLOT(recolorPackets()));
+            connect(&coloring_rules_dialog, SIGNAL(filterAction(QString,FilterAction::Action,FilterAction::ActionType)),
+                    this, SIGNAL(filterAction(QString,FilterAction::Action,FilterAction::ActionType)));
             coloring_rules_dialog.exec();
         } else {
             gchar *err_msg = NULL;
@@ -2571,6 +2565,8 @@ void MainWindow::colorizeWithFilter(QByteArray filter, int color_number)
         ColoringRulesDialog coloring_rules_dialog(window(), filter);
         connect(&coloring_rules_dialog, SIGNAL(accepted()),
                 packet_list_, SLOT(recolorPackets()));
+        connect(&coloring_rules_dialog, SIGNAL(filterAction(QString,FilterAction::Action,FilterAction::ActionType)),
+                this, SIGNAL(filterAction(QString,FilterAction::Action,FilterAction::ActionType)));
         coloring_rules_dialog.exec();
     }
     main_ui_->actionViewColorizeResetColorization->setEnabled(tmp_color_filters_used());
@@ -2627,11 +2623,9 @@ void MainWindow::openPacketDialog(bool from_reference)
     if (fdata) {
         PacketDialog *packet_dialog = new PacketDialog(*this, capture_file_, fdata);
 
-        connect(this, SIGNAL(monospaceFontChanged(QFont)),
-                packet_dialog, SIGNAL(monospaceFontChanged(QFont)));
         connect(this, SIGNAL(closePacketDialogs()),
                 packet_dialog, SLOT(close()));
-        zoomText(); // Emits monospaceFontChanged
+        zoomText(); // Emits wsApp->zoomMonospaceFont(QFont)
 
         packet_dialog->show();
     }
@@ -3871,9 +3865,13 @@ void MainWindow::on_actionContextCopyBytesHexTextDump_triggered()
     QAction *ca = qobject_cast<QAction*>(sender());
     if (!ca) return;
 
-    field_info *fi = VariantPointer<field_info>::asPtr(ca->data());
+    IDataPrintable * fieldInfo =
+            VariantPointer<IDataPrintable>::asPtr(ca->property("idataprintable_"));
+    if ( ! fieldInfo )
+        return;
 
-    byte_view_tab_->copyData(ByteViewTab::copyDataHexTextDump, fi);
+    DataPrinter printer;
+    printer.toClipboard(DataPrinter::DP_HexDump, fieldInfo);
 }
 
 void MainWindow::on_actionContextCopyBytesHexDump_triggered()
@@ -3881,9 +3879,13 @@ void MainWindow::on_actionContextCopyBytesHexDump_triggered()
     QAction *ca = qobject_cast<QAction*>(sender());
     if (!ca) return;
 
-    field_info *fi = VariantPointer<field_info>::asPtr(ca->data());
+    IDataPrintable * fieldInfo =
+            VariantPointer<IDataPrintable>::asPtr(ca->property("idataprintable_"));
+    if ( ! fieldInfo )
+        return;
 
-    byte_view_tab_->copyData(ByteViewTab::copyDataHexDump, fi);
+    DataPrinter printer;
+    printer.toClipboard(DataPrinter::DP_HexOnly, fieldInfo);
 }
 
 void MainWindow::on_actionContextCopyBytesPrintableText_triggered()
@@ -3891,9 +3893,13 @@ void MainWindow::on_actionContextCopyBytesPrintableText_triggered()
     QAction *ca = qobject_cast<QAction*>(sender());
     if (!ca) return;
 
-    field_info *fi = VariantPointer<field_info>::asPtr(ca->data());
+    IDataPrintable * fieldInfo =
+            VariantPointer<IDataPrintable>::asPtr(ca->property("idataprintable_"));
+    if ( ! fieldInfo )
+        return;
 
-    byte_view_tab_->copyData(ByteViewTab::copyDataPrintableText, fi);
+    DataPrinter printer;
+    printer.toClipboard(DataPrinter::DP_PrintableText, fieldInfo);
 }
 
 void MainWindow::on_actionContextCopyBytesHexStream_triggered()
@@ -3901,9 +3907,13 @@ void MainWindow::on_actionContextCopyBytesHexStream_triggered()
     QAction *ca = qobject_cast<QAction*>(sender());
     if (!ca) return;
 
-    field_info *fi = VariantPointer<field_info>::asPtr(ca->data());
+    IDataPrintable * fieldInfo =
+            VariantPointer<IDataPrintable>::asPtr(ca->property("idataprintable_"));
+    if ( ! fieldInfo )
+        return;
 
-    byte_view_tab_->copyData(ByteViewTab::copyDataHexStream, fi);
+    DataPrinter printer;
+    printer.toClipboard(DataPrinter::DP_HexStream, fieldInfo);
 }
 
 void MainWindow::on_actionContextCopyBytesBinary_triggered()
@@ -3911,9 +3921,13 @@ void MainWindow::on_actionContextCopyBytesBinary_triggered()
     QAction *ca = qobject_cast<QAction*>(sender());
     if (!ca) return;
 
-    field_info *fi = VariantPointer<field_info>::asPtr(ca->data());
+    IDataPrintable * fieldInfo =
+            VariantPointer<IDataPrintable>::asPtr(ca->property("idataprintable_"));
+    if ( ! fieldInfo )
+        return;
 
-    byte_view_tab_->copyData(ByteViewTab::copyDataBinary, fi);
+    DataPrinter printer;
+    printer.toClipboard(DataPrinter::DP_Binary, fieldInfo);
 }
 
 void MainWindow::on_actionContextCopyBytesEscapedString_triggered()
@@ -3921,9 +3935,13 @@ void MainWindow::on_actionContextCopyBytesEscapedString_triggered()
     QAction *ca = qobject_cast<QAction*>(sender());
     if (!ca) return;
 
-    field_info *fi = VariantPointer<field_info>::asPtr(ca->data());
+    IDataPrintable * fieldInfo =
+            VariantPointer<IDataPrintable>::asPtr(ca->property("idataprintable_"));
+    if ( ! fieldInfo )
+        return;
 
-    byte_view_tab_->copyData(ByteViewTab::copyDataEscapedString, fi);
+    DataPrinter printer;
+    printer.toClipboard(DataPrinter::DP_EscapedString, fieldInfo);
 }
 
 void MainWindow::on_actionContextWikiProtocolPage_triggered()
@@ -4044,6 +4062,21 @@ void MainWindow::filterToolbarEditFilter()
         main_ui_->filterExpressionFrame->editExpression(rowIndex.row());
 
     delete uatModel;
+}
+
+void MainWindow::filterDropped(QString description, QString filter)
+{
+    gchar* err = NULL;
+    if ( filter.length() == 0 )
+        return;
+
+    filter_expression_new(description.toUtf8().constData(),
+            filter.toUtf8().constData(), description.toUtf8().constData(), TRUE);
+
+    uat_save(uat_get_table_by_name("Display expressions"), &err);
+    g_free(err);
+
+    filterExpressionsChanged();
 }
 
 void MainWindow::filterToolbarDisableFilter()

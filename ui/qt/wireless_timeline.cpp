@@ -185,7 +185,7 @@ void WirelessTimeline::mouseReleaseEvent(QMouseEvent *event)
 void WirelessTimeline::clip_tsf()
 {
     // did we go past the start of the file?
-    if (start_tsf < first->start_tsf) {
+    if (((gint64) start_tsf) < ((gint64) first->start_tsf)) {
         // align the start of the file at the left edge
         guint64 shift = first->start_tsf - start_tsf;
         start_tsf += shift;
@@ -199,8 +199,10 @@ void WirelessTimeline::clip_tsf()
 }
 
 
-void WirelessTimeline::packetSelectionChanged()
+void WirelessTimeline::selectedFrameChanged(int frameNum)
 {
+    Q_UNUSED(frameNum);
+
     if (isHidden())
         return;
 
@@ -302,7 +304,7 @@ void WirelessTimeline::captureFileReadFinished()
     zoom_level = 0;
 
     show();
-    packetSelectionChanged();
+    selectedFrameChanged(0);
     // TODO: show or ungrey the toolbar controls
     update();
 }
@@ -441,16 +443,7 @@ void WirelessTimeline::zoom(double x_fraction)
     guint64 span = pow(file_range, 1.0 - zoom_level / TIMELINE_MAX_ZOOM);
     start_tsf = center - span * x_fraction;
     end_tsf = center + span * (1.0 - x_fraction);
-
-    /* if we go out of range for the whole file, clamp it */
-    if (start_tsf < first->start_tsf) {
-        end_tsf += first->start_tsf - start_tsf;
-        start_tsf = first->start_tsf;
-    } else if (end_tsf > last->end_tsf) {
-        start_tsf -= end_tsf - last->end_tsf;
-        end_tsf = last->end_tsf;
-    }
-
+    clip_tsf();
     update();
 }
 

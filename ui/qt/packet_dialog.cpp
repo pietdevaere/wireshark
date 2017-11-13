@@ -35,6 +35,7 @@
 #include "proto_tree.h"
 #include "wireshark_application.h"
 
+#include <ui/qt/utils/field_information.h>
 #include <QTreeWidgetItemIterator>
 
 // To do:
@@ -71,19 +72,7 @@ PacketDialog::PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata) 
 
     byte_view_tab_ = new ByteViewTab(ui->packetSplitter);
     byte_view_tab_->setCaptureFile(cap_file_.capFile());
-    byte_view_tab_->clear();
-
-    GSList *src_le;
-    for (src_le = edt_.pi.data_src; src_le != NULL; src_le = src_le->next) {
-        struct data_source *source;
-        char* source_name;
-        source = (struct data_source *)src_le->data;
-        source_name = get_data_source_name(source);
-        byte_view_tab_->addTab(source_name, get_data_source_tvb(source), edt_.tree, proto_tree_,
-                               (packet_char_enc)cap_file_.capFile()->current_frame->flags.encoding);
-        wmem_free(NULL, source_name);
-    }
-    byte_view_tab_->setCurrentIndex(0);
+    byte_view_tab_->selectedFrameChanged(0);
 
     ui->packetSplitter->setStretchFactor(1, 0);
 
@@ -95,17 +84,20 @@ PacketDialog::PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata) 
                      .arg(cap_file_.capFile()->cinfo.columns[i].col_data);
     }
     col_info_ = col_parts.join(" " UTF8_MIDDLE_DOT " ");
-    setHintText();
 
-    connect(this, SIGNAL(monospaceFontChanged(QFont)),
+    ui->hintLabel->setText(col_info_);
+
+    connect(wsApp, SIGNAL(zoomMonospaceFont(QFont)),
             proto_tree_, SLOT(setMonospaceFont(QFont)));
-    connect(this, SIGNAL(monospaceFontChanged(QFont)),
-            byte_view_tab_, SLOT(setMonospaceFont(QFont)));
 
-    connect(proto_tree_, SIGNAL(currentItemChanged(QTreeWidgetItem*,QTreeWidgetItem*)),
-            byte_view_tab_, SLOT(protoTreeItemChanged(QTreeWidgetItem*)));
-    connect(byte_view_tab_, SIGNAL(byteFieldHovered(const QString&)),
-            this, SLOT(setHintText(const QString&)));
+    connect(byte_view_tab_, SIGNAL(fieldSelected(FieldInformation *)),
+            proto_tree_, SLOT(selectedFieldChanged(FieldInformation *)));
+    connect(proto_tree_, SIGNAL(fieldSelected(FieldInformation *)),
+            byte_view_tab_, SLOT(selectedFieldChanged(FieldInformation *)));
+
+    connect(byte_view_tab_, SIGNAL(fieldHighlight(FieldInformation *)),
+            this, SLOT(setHintText(FieldInformation *)));
+
 }
 
 PacketDialog::~PacketDialog()
@@ -120,18 +112,34 @@ void PacketDialog::captureFileClosing()
     QString closed_title = tr("[%1 closed] " UTF8_MIDDLE_DOT " %2")
             .arg(cap_file_.fileName())
             .arg(col_info_);
-    setHintText(closed_title);
+    ui->hintLabel->setText(closed_title);
     WiresharkDialog::captureFileClosing();
-}
-
-void PacketDialog::setHintText(const QString &hint)
-{
-    ui->hintLabel->setText(hint.isEmpty() ? col_info_ : hint);
 }
 
 void PacketDialog::on_buttonBox_helpRequested()
 {
     wsApp->helpTopicAction(HELP_NEW_PACKET_DIALOG);
+}
+
+void PacketDialog::setHintText(FieldInformation * finfo)
+{
+    QString hint;
+
+     if ( finfo )
+     {
+         FieldInformation::Position pos = finfo->position();
+         QString field_str;
+
+         if (pos.length < 2) {
+             hint = QString(tr("Byte %1")).arg(pos.start);
+         } else {
+             hint = QString(tr("Bytes %1-%2")).arg(pos.start).arg(pos.start + pos.length - 1);
+         }
+         hint += QString(": %1 (%2)")
+                 .arg(finfo->headerInfo().name)
+                 .arg(finfo->headerInfo().abbreviation);
+     }
+     ui->hintLabel->setText(hint);
 }
 
 /*

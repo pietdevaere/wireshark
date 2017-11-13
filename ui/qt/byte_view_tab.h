@@ -28,54 +28,54 @@
 #include <epan/proto.h>
 #include <epan/tvbuff.h>
 
+#include <ui/qt/utils/field_information.h>
+
 #include "cfile.h"
 
 #include <QTabWidget>
 
-class QTreeWidget;
-class QTreeWidgetItem;
+
+#include <ui/qt/widgets/byte_view_text.h>
 
 class ByteViewTab : public QTabWidget
 {
     Q_OBJECT
-public:
-    enum copyDataType {
-        copyDataHexTextDump,
-        copyDataHexDump,
-        copyDataPrintableText,
-        copyDataHexStream,
-        copyDataBinary,
-        copyDataEscapedString
-    };
 
+public:
     explicit ByteViewTab(QWidget *parent = 0);
-    void addTab(const char *name = "", tvbuff_t *tvb = NULL, proto_tree *tree = NULL, QTreeWidget *protoTree = NULL, packet_char_enc encoding = PACKET_CHAR_ENC_CHAR_ASCII);
-    void clear();
-    void copyData(copyDataType copy_type, field_info *fi = NULL);
+
+public slots:
+    /* Set the capture file */
+    void setCaptureFile(capture_file *cf);
+    /* Creates the tabs and data, depends on an dissection which has already run */
+    void selectedFrameChanged(int);
+    /* Selects or marks a field */
+    void selectedFieldChanged(FieldInformation *);
+
+signals:
+    void fieldSelected(FieldInformation *);
+    void fieldHighlight(FieldInformation *);
 
 private:
     capture_file *cap_file_;
-    QFont mono_font_;
+
+    FieldInformation * curSelected;
 
     void setTabsVisible();
-    void copyHexTextDump(const guint8 *data_p, int data_len, bool append_text);
-    void copyPrintableText(const guint8 *data_p, int data_len);
-    void copyHexStream(const guint8 *data_p, int data_len);
-    void copyBinary(const guint8 *data_p, int data_len);
-    void copyEscapedString(const guint8 *data_p, int data_len);
+
+    ByteViewText * findByteViewTextForTvb(tvbuff_t * search, int * idx = 0);
+
+    void addTab(const char *name = "", tvbuff_t *tvb = NULL);
 
 protected:
-    void tabInserted(int index);
-    void tabRemoved(int index);
+    void tabInserted(int);
+    void tabRemoved(int);
 
-signals:
-    void monospaceFontChanged(const QFont &mono_font);
-    void byteFieldHovered(const QString &);
+private slots:
+    void byteViewTextHovered(int);
+    void byteViewTextMarked(int);
 
-public slots:
-    void protoTreeItemChanged(QTreeWidgetItem *current);
-    void setCaptureFile(capture_file *cf);
-    void setMonospaceFont(const QFont &mono_font);
+    void connectToMainWindow();
 };
 
 #endif // BYTE_VIEW_TAB_H

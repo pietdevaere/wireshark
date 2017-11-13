@@ -3964,6 +3964,7 @@ Adam Goldman		<adam.goldman[AT]intel.com>
 Adam Mitz		<mitza[AT]ociweb.com>
 Adam Pridgen		<adam.pridgen[AT]thecoverofnight.com>
 Adam Schwalm		<adam.schwalm[AT]dynetics.com>
+Adam Wujek		<adam.wujek[AT]cern.ch>
 Aditya Jain		<aditya.jain[AT]samsung.com>
 Adrian Simionov		<daniel.simionov[AT]gmail.com>
 Adrian-Ken Rueegsegger	<ken[AT]codelabs.ch>
@@ -4026,6 +4027,7 @@ Boris Bochkarev		<Boris-Bochkaryov[AT]yandex.ru>
 Bradford Boyle		<bradford.d.boyle[AT]gmail.com>
 Brandon Enochs		<enochs.brandon[AT]gmail.com>
 Branislav Makan		<branislav.makan1994[AT]gmail.com>
+Brenton Rothchild	<brentonr[AT]dorm.org>
 Brian Whitney		<brian.m.whitney[AT]outlook.com>
 Britt McKinley		<bmckinley[AT]sonusnet.com>
 Bruno Verstuyft		<bruno.verstuyft[AT]excentis.com>
@@ -4102,6 +4104,7 @@ Ebben Aries		<exa[AT]fb.com>
 Edward Dao		<edmailbox[AT]gmail.com>
 Edward Smith		<edward.smith[AT]nowlegent.com>
 Edwin Groothuis		<edwin[AT]mavetju.org>
+Eldon Stegall		<wireshark-gerrit[AT]eldondev.com>
 Eliot Lear		<lear[AT]cisco.com>
 Emery Hemingway		<emery[AT]vfemail.net>
 Eric Anderson		<andersoe[AT]cs.cmu.edu>
@@ -4111,14 +4114,14 @@ Ethan Young		<imfargo[AT]gmail.com>
 Etienne Dechamps	<etienne[AT]edechamps.fr>
 Etienne Millon		<etienne[AT]cryptosense.com>
 Eugene Adell		<eugene.adell[AT]d2-si.eu>
-Eugene Adell		<eugene.adell[AT]gmail.com>
 Eugene Exarevsky	<eugene.exarevsky[AT]dsr-company.com>
 Eugene Sukhodolin	<eugene[AT]sukhodolin.com>
 Evelio Vila		<eveliovila[AT]gmail.com>
 Fabian Raetz		<fabian.raetz[AT]gmail.com>
 Fabrizio Demaria	<fabrizio.demaria[AT]intel.com>
+Felix Ruess		<felix.ruess[AT]roboception.de>
+Flavio Santes		<flavio.santes[AT]1byt3.com>
 Florian Adamsky		<fa-git[AT]haktar.org>
-Florian Fainelli	<f.fainelli[AT]gmail.com>
 Florian Lohoff		<f[AT]zz.de>
 Francisco Javier Sánchez-Roselly <franciscojavier.sanchezroselly[AT]ujaen.es>
 Francois Schneider	<francois.schneider[AT]airbus.com>
@@ -4136,15 +4139,18 @@ Gerhard KHUENY		<Gerhard.KHUENY[AT]bachmann.info>
 Gianluca Borello	<g.borello[AT]gmail.com>
 Gloria Pozuelo		<gloria.pozuelo[AT]bics.com>
 Gordon Ross		<gordon.w.ross[AT]gmail.com>
+Graham Shanks		<graham.shanks[AT]blueyonder.co.uk>
 Gregor Beck		<gbeck[AT]sernet.de>
 Gregor Jasny		<gjasny[AT]googlemail.com>
 Gregor Miernik		<gregor.miernik[AT]hytec.de>
 Guillaume Autran	<gautran[AT]clearpathrobotics.com>
 Guy Davies		<aguydavies[AT]gmail.com>
 Günther Deschner	<gd[AT]samba.org>
+Hal Rosenstock		<hal.rosenstock[AT]gmail.com>
 Hanspeter Portner	<dev[AT]open-music-kontrollers.ch>
 Hassan Sultan		<sultah[AT]amazon.com>
 Hauke Mehrtens		<hauke.mehrtens[AT]intel.com>
+Helmut Buchsbaum	<helmut.buchsbaum[AT]gmail.com>
 Herwin Weststrate	<herwin[AT]quarantainenet.nl>
 Hessam Jalali		<hessam.jalali[AT]gmail.com>
 Hiroaki KAWAI		<hiroaki.kawai[AT]gmail.com>
@@ -4156,6 +4162,7 @@ Ignacio Martínez	<ignacio.martinez.rivera[AT]gmail.com>
 Ike Gilbert		<ike[AT]imgilbert.com>
 Ilya Gavrilov		<ilya.dev[AT]gmail.com>
 Ionut Ceausu		<ionut.ceausu[AT]gmail.com>
+Ivan Ermakov		<iermakov[AT]yahoo.com>
 Ivan Nardi		<nardi.ivan[AT]gmail.com>
 J. Bruce Fields		<bfields[AT]redhat.com>
 JC Wren			<jcwren[AT]jcwren.com>
@@ -4168,8 +4175,11 @@ Jan Seda		<hodor[AT]hodor.cz>
 Jan Spevak		<jan.spevak[AT]nokia.com>
 Jan-Hendrik Bolte	<jabolte[AT]uos.de>
 Jason Heimann		<jheimann[AT]pertino.com>
+Jason Uher		<jason.uher[AT]jhuapl.edu>
 Jean Thomas		<jeanthomas[AT]sierrawireless.com>
+Jeff Dyer		<jmasterfunk[AT]gmail.com>
 Jeff Layton		<jlayton[AT]redhat.com>
+Jeff Widman		<jeff[AT]jeffwidman.com>
 Jeffrey Smith		<whydoubt[AT]gmail.com>
 Jens Kilian		<jens.kilian[AT]advantest.com>
 Jeremy Hitt		<jeremy.hitt[AT]isilon.com>
@@ -4228,6 +4238,7 @@ Luke Chou		<luke.chou[AT]gmail.com>
 Luke Mewburn		<luke[AT]mewburn.net>
 Léo Gaspard		<leo[AT]gaspard.io>
 Maarten Bezemer		<maarten.bezemer[AT]gmail.com>
+Magnus Henoch		<magnus.henoch[AT]gmail.com>
 Maka0			<Maka0[AT]yurei.net>
 Makoto Shimamura	<makoto.shimamura[AT]toshiba.co.jp>
 Malcolm Walters		<malcolm.walters[AT]acano.com>
@@ -4250,6 +4261,7 @@ Martin Tibenský		<martin.tibensky[AT]alcatel-lucent.com>
 Martin Vit		<martin[AT]voipmonitor.org>
 Masashi Honma		<masashi.honma[AT]gmail.com>
 Matej Košík		<5764c029b688c1c0d24a2e97cd764f[AT]gmail.com>
+Matej Tkac		<matej.tkac.mt[AT]gmail.com>
 Mathias Kurth		<mathias.kurth[AT]commsolid.com>
 Matt Lawrence		<bugzilla.wireshark[AT]erisa.co.uk>
 Matthieu Coudron	<matthieu.coudron[AT]lip6.fr>
@@ -4283,7 +4295,9 @@ Nick Carter		<ncarter100[AT]gmail.com>
 Nick Lowe		<nick.lowe[AT]gmail.com>
 Nicolas BERTIN		<nicolas.bertin[AT]al-enterprise.com>
 Nicolas Cavallari	<nicolas.cavallari[AT]green-communications.fr>
+Nicolas Darchis		<ndarchis[AT]cisco.com>
 Nicolas S. Dade		<nic.dade[AT]gmail.com>
+Nikolai Ipatyev		<wallprime[AT]yandex.com>
 Nils Ohlmeier		<github[AT]ohlmeier.org>
 Nitzan Carmi		<nitzanc[AT]mellanox.com>
 Noel Power		<noel.power[AT]suse.com>
@@ -4312,7 +4326,7 @@ Paulo Roberto Brandão	<betobrandao[AT]gmail.com>
 Pavel Karneliuk		<pavel_karneliuk[AT]epam.com>
 Pavel Moravec		<mgr.pavel[AT]gmail.com>
 Pavel Odintsov		<pavel.odintsov[AT]gmail.com>
-Pavel Strnad		<pavel_strnad[AT]hotmail.com>
+Pavel Strnad		<strnadp[AT]tiscali.cz>
 Pavlos Antoniou		<pant[AT]intracom-telecom.com>
 Pedro Jose Marron	<pjmarron[AT]locoslab.com>
 Peng Li			<seudut[AT]gmail.com>
@@ -4373,6 +4387,7 @@ Shuai Xiao		<iamhihi[AT]gmail.com>
 Silvio Gissi		<silvio.gissi[AT]gmail.com>
 Simon Barber		<simon.barber[AT]meraki.net>
 Simon Graham		<simgrxp[AT]gmail.com>
+Simon Long		<hobei[AT]whitedoor.plus.com>
 Simon Vans-Colina	<simon[AT]monzo.com>
 Simon Zhong		<szhong.jnpr[AT]gmail.com>
 Slava Shwartsman	<slavash[AT]mellanox.com>
@@ -4391,6 +4406,7 @@ Sven Eckelmann		<sven[AT]open-mesh.com>
 Sven Schnelle		<svens[AT]stackframe.org>
 Sylvain Munaut		<tnt[AT]246tNt.com>
 T. Scholz		<scholzt234[AT]googlemail.com>
+Taisuke Sasaki		<taisasak[AT]cisco.com>
 Tatsuhiro Tsujikawa	<tatsuhiro.t[AT]gmail.com>
 Thibault Gerondal	<github[AT]tycale.be>
 Thies Moeller		<thies.moeller[AT]baslerweb.com>
@@ -4446,6 +4462,7 @@ Yury Gargay		<yury.gargay[AT]gmail.com>
 Zdeněk Žamberský	<zzdevel[AT]seznam.cz>
 Zhao Lin		<zlbinghamton[AT]gmail.com>
 anonsvn			<anonsvn[AT]localhost>
+bat			<stefan.battmer[AT]matrix-vision.de>
 cff339			<cff339[AT]gmail.com>
 cheloftus		<cheloftus[AT]gmail.com>
 kardam			<netkardam[AT]gmail.com>

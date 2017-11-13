@@ -1120,7 +1120,7 @@ dissect_diameter_3gpp_user_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
     if(length < 38)
         return length;
 
-    if (tvb_strncaseeql(tvb, 0, "<?xml", 5) == 0) {
+    if (tvb_strncaseeql(tvb, 0, "<?xml", 5) == 0 && xml_handle) {
         call_dissector(xml_handle, tvb, pinfo, tree);
     }
 
@@ -2123,6 +2123,26 @@ dissect_diameter_3gpp_wlan_offloadability_utran(tvbuff_t *tvb, packet_info *pinf
 }
 
 /* 3GPP TS 29.272
+* 7.3.191 Group-PLMN-Id
+* AVP Code: 1677 Group-PLMN-Id
+*/
+static int
+dissect_diameter_3gpp_group_plmn_id(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    int length = tvb_reported_length(tvb);
+    diam_sub_dis_t *diam_sub_dis = (diam_sub_dis_t*)data;
+
+    if (length == 3) {
+        diam_sub_dis->avp_str = dissect_e212_mcc_mnc_wmem_packet_str(tvb, pinfo, tree, 0, E212_NONE, TRUE);
+    } else {
+        proto_tree_add_expert(tree, pinfo, &ei_diameter_3gpp_plmn_id_wrong_len, tvb, 0, length);
+    }
+
+    return length;
+}
+
+
+/* 3GPP TS 29.272
 * 7.3.201 AIR-Flags
 * AVP Code: 1679 AIR-Flags
 */
@@ -2180,6 +2200,25 @@ static int
 dissect_diameter_3gpp_eutran_positioning_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
     return dissect_lcsap_Positioning_Data_PDU(tvb, pinfo, tree, NULL);
+}
+
+/* AVP Code: 2556 Civic-Address */
+static int
+dissect_diameter_3gpp_civic_address(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+    int length = tvb_reported_length(tvb);
+
+    /* If there is less than 38 characters this is not XML
+     * <?xml version="1.0" encoding="UTF-8"?>
+     */
+    if(length < 38)
+        return length;
+
+    if (tvb_strncaseeql(tvb, 0, "<?xml", 5) == 0 && xml_handle) {
+        call_dissector(xml_handle, tvb, pinfo, tree);
+    }
+
+    return length;
 }
 
 /* AVP Code: 2819 RAN-NAS-Release-Cause*/
@@ -2526,6 +2565,9 @@ proto_reg_handoff_diameter_3gpp(void)
     /* AVP Code: 1669 WLAN-offloadability-UTRAN */
     dissector_add_uint("diameter.3gpp", 1669, create_dissector_handle(dissect_diameter_3gpp_wlan_offloadability_utran, proto_diameter_3gpp));
 
+    /* AVP Code: 1677 Group-PLMN-Id */
+    dissector_add_uint("diameter.3gpp", 1677, create_dissector_handle(dissect_diameter_3gpp_group_plmn_id, proto_diameter_3gpp));
+
     /* AVP Code: 1679 AIR-Flags */
     dissector_add_uint("diameter.3gpp", 1679, create_dissector_handle(dissect_diameter_3gpp_air_flags, proto_diameter_3gpp));
 
@@ -2537,6 +2579,9 @@ proto_reg_handoff_diameter_3gpp(void)
 
     /* AVP Code: 2516 EUTRAN-Positioning-Data */
     dissector_add_uint("diameter.3gpp", 2516, create_dissector_handle(dissect_diameter_3gpp_eutran_positioning_data, proto_diameter_3gpp));
+
+    /* AVP Code: 2556 Civic-Address */
+    dissector_add_uint("diameter.3gpp", 2556, create_dissector_handle(dissect_diameter_3gpp_civic_address, proto_diameter_3gpp));
 
     /* AVP Code: 2819 RAN-NAS-Release-Cause */
     dissector_add_uint("diameter.3gpp", 2819, create_dissector_handle(dissect_diameter_3gpp_ran_nas_release_cause, proto_diameter_3gpp));

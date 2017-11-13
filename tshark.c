@@ -7,19 +7,7 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #include <config.h>
@@ -36,7 +24,7 @@
 
 #include <errno.h>
 
-#ifdef HAVE_WINSOCK2_H
+#ifdef _WIN32
 # include <winsock2.h>
 #endif
 
@@ -86,7 +74,7 @@
 #include "ui/capture_ui_utils.h"
 #endif
 #include "ui/util.h"
-#include "ui/ui_util.h"
+#include "ui/ws_ui_util.h"
 #include "ui/decode_as_utils.h"
 #include "ui/filter_files.h"
 #include "ui/cli/tshark-tap.h"
@@ -193,7 +181,7 @@ typedef enum {
 static output_action_e output_action;
 static gboolean do_dissection;     /* TRUE if we have to dissect each packet */
 static gboolean print_packet_info; /* TRUE if we're to print packet information */
-static gint print_summary = -1;    /* TRUE if we're to print packet summary information */
+static gboolean print_summary;     /* TRUE if we're to print packet summary information */
 static gboolean print_details;     /* TRUE if we're to print packet details information */
 static gboolean print_hex;         /* TRUE if we're to print hex/ascci information */
 static gboolean line_buffered;
@@ -213,6 +201,8 @@ static proto_node_children_grouper_func node_children_grouper = proto_node_group
 
 /* The line separator used between packets, changeable via the -S option */
 static const char *separator = "";
+
+static gboolean prefs_loaded = FALSE;
 
 #ifdef HAVE_LIBPCAP
 /*
@@ -466,7 +456,7 @@ print_usage(FILE *output)
   fprintf(output, "  -K <keytab>              keytab file to use for kerberos decryption\n");
   fprintf(output, "  -G [report]              dump one of several available reports and exit\n");
   fprintf(output, "                           default report=\"fields\"\n");
-  fprintf(output, "                           use \"-G ?\" for more help\n");
+  fprintf(output, "                           use \"-G help\" for more help\n");
 #ifdef __linux__
   fprintf(output, "\n");
   fprintf(output, "WARNING: dumpcap will enable kernel BPF JIT compiler if available.\n");
@@ -513,7 +503,7 @@ tshark_log_handler (const gchar *log_domain, GLogLevelFlags log_level,
 {
   /* ignore log message, if log_level isn't interesting based
      upon the console log preferences.
-     If the preferences haven't been loaded loaded yet, display the
+     If the preferences haven't been loaded yet, display the
      message anyway.
 
      The default console_log_level preference value is such that only
@@ -524,8 +514,7 @@ tshark_log_handler (const gchar *log_domain, GLogLevelFlags log_level,
            ERROR and CRITICAL level messages so the current code is a behavioral
            change.  The current behavior is the same as in Wireshark.
   */
-  if ((log_level & G_LOG_LEVEL_MASK & prefs.console_log_level) == 0 &&
-     prefs.console_log_level != 0) {
+  if (prefs_loaded && (log_level & G_LOG_LEVEL_MASK & prefs.console_log_level) == 0) {
     return;
   }
 
@@ -872,15 +861,6 @@ main(int argc, char *argv[])
     }
   }
 
-  /*
-   * Print packet summary information is the default, unless either -V or -x
-   * were specified and -P was not.  Note that this is new behavior, which
-   * allows for the possibility of printing only hex/ascii output without
-   * necessarily requiring that either the summary or details be printed too.
-   */
-  if (print_summary == -1)
-    print_summary = (print_details || print_hex) ? FALSE : TRUE;
-
 /** Send All g_log messages to our own handler **/
 
   log_flags =
@@ -1014,12 +994,18 @@ main(int argc, char *argv[])
         proto_registrar_dump_protocols();
       else if (strcmp(argv[2], "values") == 0)
         proto_registrar_dump_values();
+      else if (strcmp(argv[2], "help") == 0)
+        glossary_option_help();
+      /* These are supported only for backwards compatibility and may or may not work
+       * for a given user in a given directory on a given operating system with a given
+       * command-line interpreter.
+       */
       else if (strcmp(argv[2], "?") == 0)
         glossary_option_help();
       else if (strcmp(argv[2], "-?") == 0)
         glossary_option_help();
       else {
-        cmdarg_err("Invalid \"%s\" option for -G flag, enter -G ? for more help.", argv[2]);
+        cmdarg_err("Invalid \"%s\" option for -G flag, enter -G help for more help.", argv[2]);
         exit_status = INVALID_OPTION;
         goto clean_exit;
       }
@@ -1032,6 +1018,7 @@ main(int argc, char *argv[])
 
   /* Load libwireshark settings from the current profile. */
   prefs_p = epan_load_settings();
+  prefs_loaded = TRUE;
 
   read_filter_list(CFILTER_LIST);
 
@@ -1323,8 +1310,8 @@ main(int argc, char *argv[])
         print_summary = FALSE;  /* Don't allow summary */
       } else if (strcmp(optarg, "ek") == 0) {
         output_action = WRITE_EK;
-        print_details = TRUE;   /* Need details */
-        print_summary = FALSE;  /* Don't allow summary */
+        if (!print_summary)
+          print_details = TRUE;
       } else if (strcmp(optarg, "jsonraw") == 0) {
         output_action = WRITE_JSON_RAW;
         print_details = TRUE;   /* Need details */
@@ -1479,6 +1466,15 @@ main(int argc, char *argv[])
       break;
     }
   }
+
+  /*
+   * Print packet summary information is the default if neither -V or -x
+   * were specified. Note that this is new behavior, which allows for the
+   * possibility of printing only hex/ascii output without necessarily
+   * requiring that either the summary or details be printed too.
+   */
+  if (!print_summary && !print_details && !print_hex)
+    print_summary = TRUE;
 
   if (no_duplicate_keys && output_action != WRITE_JSON && output_action != WRITE_JSON_RAW) {
     cmdarg_err("--no-duplicate-keys can only be used with \"-T json\" and \"-T jsonraw\"");
@@ -3899,36 +3895,17 @@ print_columns(capture_file *cf, const epan_dissect_t *edt)
 static gboolean
 print_packet(capture_file *cf, epan_dissect_t *edt)
 {
-  if (print_summary || output_fields_has_cols(output_fields)) {
+  if (print_summary || output_fields_has_cols(output_fields))
     /* Just fill in the columns. */
     epan_dissect_fill_in_columns(edt, FALSE, TRUE);
 
-    if (print_summary) {
-      /* Now print them. */
-      switch (output_action) {
+  /* Print summary columns and/or protocol tree */
+  switch (output_action) {
 
-      case WRITE_TEXT:
-        if (!print_columns(cf, edt))
-          return FALSE;
-        break;
-
-      case WRITE_XML:
-        write_psml_columns(edt, stdout, dissect_color);
-        return !ferror(stdout);
-      case WRITE_FIELDS: /*No non-verbose "fields" format */
-      case WRITE_JSON:
-      case WRITE_EK:
-      case WRITE_JSON_RAW:
-        g_assert_not_reached();
-        break;
-      }
-    }
-  }
-  if (print_details) {
-    /* Print the information in the protocol tree. */
-    switch (output_action) {
-
-    case WRITE_TEXT:
+  case WRITE_TEXT:
+    if (print_summary && !print_columns(cf, edt))
+        return FALSE;
+    if (print_details) {
       if (!proto_tree_print(print_details ? print_dissections_expanded : print_dissections_none,
                             print_hex, edt, output_only_tables, print_stream))
         return FALSE;
@@ -3936,32 +3913,61 @@ print_packet(capture_file *cf, epan_dissect_t *edt)
         if (!print_line(print_stream, 0, separator))
           return FALSE;
       }
-      break;
+    }
+    break;
 
-    case WRITE_XML:
+  case WRITE_XML:
+    if (print_summary) {
+      write_psml_columns(edt, stdout, dissect_color);
+      return !ferror(stdout);
+    }
+    if (print_details) {
       write_pdml_proto_tree(output_fields, protocolfilter, protocolfilter_flags, edt, stdout, dissect_color);
       printf("\n");
       return !ferror(stdout);
-    case WRITE_FIELDS:
+    }
+    break;
+
+  case WRITE_FIELDS:
+    if (print_summary) {
+      /*No non-verbose "fields" format */
+      g_assert_not_reached();
+    }
+    if (print_details) {
       write_fields_proto_tree(output_fields, edt, &cf->cinfo, stdout);
       printf("\n");
       return !ferror(stdout);
-    case WRITE_JSON:
+    }
+    break;
+
+  case WRITE_JSON:
+    if (print_summary)
+      g_assert_not_reached();
+    if (print_details) {
       write_json_proto_tree(output_fields, print_dissections_expanded,
                             print_hex, protocolfilter, protocolfilter_flags,
                             edt, node_children_grouper, stdout);
       return !ferror(stdout);
-    case WRITE_JSON_RAW:
+    }
+    break;
+
+  case WRITE_JSON_RAW:
+    if (print_summary)
+      g_assert_not_reached();
+    if (print_details) {
       write_json_proto_tree(output_fields, print_dissections_none, TRUE,
                             protocolfilter, protocolfilter_flags,
                             edt, node_children_grouper, stdout);
       return !ferror(stdout);
-    case WRITE_EK:
-      write_ek_proto_tree(output_fields, print_hex, protocolfilter,
-                          protocolfilter_flags, edt, stdout);
-      return !ferror(stdout);
     }
+    break;
+
+  case WRITE_EK:
+    write_ek_proto_tree(output_fields, print_summary, print_hex, protocolfilter,
+                        protocolfilter_flags, edt, stdout);
+    return !ferror(stdout);
   }
+
   if (print_hex) {
     if (print_summary || print_details) {
       if (!print_line(print_stream, 0, ""))

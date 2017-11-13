@@ -24,12 +24,14 @@ ADD_CUSTOM_CMAKE_INCLUDE()
 set(WIRESHARK_WIDGET_HEADERS
 	widgets/additional_toolbar.h
 	widgets/apply_line_edit.h
+	widgets/byte_view_text.h
 	widgets/capture_filter_combo.h
 	widgets/capture_filter_edit.h
 	widgets/clickable_label.h
 	widgets/display_filter_combo.h
 	widgets/display_filter_edit.h
 	widgets/drag_drop_toolbar.h
+	widgets/drag_label.h
 	widgets/editor_color_dialog.h
 	widgets/editor_file_dialog.h
 	widgets/elided_label.h
@@ -47,9 +49,13 @@ set(WIRESHARK_WIDGET_HEADERS
 
 set(WIRESHARK_UTILS_HEADERS
 	utils/color_utils.h
+	utils/field_information.h
+	utils/frame_information.h
+	utils/data_printer.h
 	utils/stock_icon.h
 	utils/qt_ui_utils.h
 	utils/tango_colors.h
+	utils/wireshark_mime_data.h
 	utils/variant_pointer.h
 )
 
@@ -85,7 +91,6 @@ set(WIRESHARK_QT_HEADERS
 	bluetooth_hci_summary_dialog.h
 	accordion_frame.h
 	byte_view_tab.h
-	byte_view_text.h
 	capture_file.h
 	capture_file_dialog.h
 	capture_file_properties_dialog.h
@@ -224,12 +229,14 @@ file(GLOB EXTRA_QT_HEADERS
 set(WIRESHARK_WIDGET_SRCS
 	widgets/additional_toolbar.cpp
 	widgets/apply_line_edit.cpp
+	widgets/byte_view_text.cpp
 	widgets/capture_filter_combo.cpp
 	widgets/capture_filter_edit.cpp
 	widgets/clickable_label.cpp
 	widgets/display_filter_combo.cpp
 	widgets/display_filter_edit.cpp
 	widgets/drag_drop_toolbar.cpp
+	widgets/drag_label.cpp
 	widgets/editor_color_dialog.cpp
 	widgets/editor_file_dialog.cpp
 	widgets/elided_label.cpp
@@ -247,7 +254,11 @@ set(WIRESHARK_WIDGET_SRCS
 
 set(WIRESHARK_UTILS_SRCS
 	utils/color_utils.cpp
+	utils/field_information.cpp
+	utils/frame_information.cpp
+	utils/data_printer.cpp
 	utils/stock_icon.cpp
+	utils/wireshark_mime_data.cpp
 	utils/qt_ui_utils.cpp
 )
 
@@ -281,7 +292,6 @@ set(WIRESHARK_QT_SRC
 	bluetooth_devices_dialog.cpp
 	bluetooth_hci_summary_dialog.cpp
 	byte_view_tab.cpp
-	byte_view_text.cpp
 	capture_file.cpp
 	capture_file_dialog.cpp
 	capture_file_properties_dialog.cpp
@@ -556,14 +566,27 @@ include_directories(
 
 SET(CMAKE_AUTOMOC TRUE)
 
-if (QT_VERSION EQUAL 5)
-	QT5_ADD_TRANSLATION(WIRESHARK_QT_QM ${WIRESHARK_QT_TS})
-	QT5_ADD_RESOURCES(WIRESHARK_QT_QRC_SRC ${WIRESHARK_QT_QRC})
-	QT5_WRAP_UI(WIRESHARK_QT_UI_SRC ${WIRESHARK_QT_UI})
+if(CMAKE_VERSION VERSION_LESS "3.0.2")
+	# AUTOUIC and AUTORCC are not supported in CMAKE 2.8.x
+	if (QT_VERSION EQUAL 5)
+		QT5_ADD_TRANSLATION(WIRESHARK_QT_QM ${WIRESHARK_QT_TS})
+		QT5_ADD_RESOURCES(WIRESHARK_QT_QRC_SRC ${WIRESHARK_QT_QRC})
+		QT5_WRAP_UI(WIRESHARK_QT_UI_SRC ${WIRESHARK_QT_UI})
+	else()
+		QT4_ADD_TRANSLATION(WIRESHARK_QT_QM ${WIRESHARK_QT_TS})
+		QT4_ADD_RESOURCES(WIRESHARK_QT_QRC_SRC ${WIRESHARK_QT_QRC})
+		QT4_WRAP_UI(WIRESHARK_QT_UI_SRC ${WIRESHARK_QT_UI})
+	endif()
 else()
-	QT4_ADD_TRANSLATION(WIRESHARK_QT_QM ${WIRESHARK_QT_TS})
-	QT4_ADD_RESOURCES(WIRESHARK_QT_QRC_SRC ${WIRESHARK_QT_QRC})
-	QT4_WRAP_UI(WIRESHARK_QT_UI_SRC ${WIRESHARK_QT_UI})
+	SET(CMAKE_AUTOUIC TRUE)
+	SET(CMAKE_AUTORCC TRUE)
+	# Add .qrc files to library dependencies for AUTORCC.
+	set(WIRESHARK_QT_QRC_SRC ${WIRESHARK_QT_QRC})
+	if (QT_VERSION EQUAL 5)
+		QT5_ADD_TRANSLATION(WIRESHARK_QT_QM ${WIRESHARK_QT_TS})
+	else()
+		QT4_ADD_TRANSLATION(WIRESHARK_QT_QM ${WIRESHARK_QT_TS})
+	endif()
 endif()
 
 add_custom_target(
@@ -586,10 +609,8 @@ register_tap_files(wireshark-tap-register.c
 	${WIRESHARK_QT_TAP_SRC}
 )
 
-source_group("ui\\moc Source Files" FILES ${WIRESHARK_QT_MOC_SRC})
-source_group("ui\\Header" FILES ${WIRESHARK_QT_UI_SRC})
 source_group("ui\\UIC Files" FILES ${WIRESHARK_QT_UI})
-source_group("ui\\qrc" FILES ${WIRESHARK_QT_QRC_SRC} ${WIRESHARK_QT_QRC})
+source_group("ui\\qrc" FILES ${WIRESHARK_QT_QRC})
 source_group("ui\\Header" FILES ${WIRESHARK_QT_HEADERS})
 source_group("ui\\Widget Header" FILES ${WIRESHARK_WIDGET_HEADERS})
 source_group("ui\\Widget Source" FILES ${WIRESHARK_WIDGET_SRCS})
@@ -612,14 +633,20 @@ add_library(qtui STATIC
 
 	${WIRESHARK_QT_TAP_SRC}
 	${WIRESHARK_QT_UI_SRC}
-	${WIRESHARK_QT_MOC_SRC}
 	${WIRESHARK_QT_QRC_SRC}
 	wireshark-tap-register.c
 )
 add_dependencies(qtui translations)
-set_target_properties(qtui PROPERTIES COMPILE_OPTIONS "${WS_WARNINGS_CXX_FLAGS}")
-set_target_properties(qtui PROPERTIES LINK_FLAGS "${WS_LINK_FLAGS}")
-set_target_properties(qtui PROPERTIES FOLDER "UI")
+set_target_properties(qtui PROPERTIES
+	LINK_FLAGS "${WS_LINK_FLAGS}"
+	FOLDER "UI"
+)
+if(NOT CMAKE_VERSION VERSION_LESS "3.0.2")
+	# Ensure .qm files are generated before autogenerating i18n.qrc
+	set_target_properties(qtui PROPERTIES
+		AUTOGEN_TARGET_DEPENDS "${WIRESHARK_QT_QM}"
+	)
+endif()
 
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html

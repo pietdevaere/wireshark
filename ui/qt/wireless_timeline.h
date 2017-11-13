@@ -36,7 +36,7 @@
 
 #include "file.h"
 
-#include "ui/ui_util.h"
+#include "ui/ws_ui_util.h"
 
 #include <epan/prefs.h>
 #include <epan/plugin_if.h>
@@ -78,7 +78,7 @@ protected:
 
 public slots:
     void bgColorizationProgress(int first, int last);
-    void packetSelectionChanged();
+    void selectedFrameChanged(int frameNum);
     void appInitialized();
 
 protected:

@@ -34,8 +34,8 @@
 #include <epan/expert.h>
 #include <epan/to_str.h>
 #include <epan/decode_as.h>
-#include <wsutil/crc16.h>
-#include <wsutil/crc32.h>
+#include <epan/crc16-tvb.h>
+#include <epan/crc32-tvb.h>
 #include <wsutil/str_util.h>
 #include "packet-nfs.h"
 
@@ -431,7 +431,6 @@ static int hf_nfs4_server = -1;
 static int hf_nfs4_fslocation = -1;
 static int hf_nfs4_stable_how = -1;
 static int hf_nfs4_dirlist_eof = -1;
-/* static int hf_nfs4_stateid = -1; */
 static int hf_nfs4_offset = -1;
 static int hf_nfs4_specdata1 = -1;
 static int hf_nfs4_specdata2 = -1;
@@ -489,6 +488,8 @@ static int hf_nfs4_qop = -1;
 static int hf_nfs4_secinfo_rpcsec_gss_info_service = -1;
 static int hf_nfs4_attr_dir_create = -1;
 static int hf_nfs4_client_id = -1;
+static int hf_nfs4_stateid = -1;
+static int hf_nfs4_seqid_stateid = -1;
 static int hf_nfs4_stateid_other = -1;
 static int hf_nfs4_stateid_hash = -1;
 static int hf_nfs4_stateid_other_hash = -1;
@@ -595,7 +596,6 @@ static int hf_nfs4_lrs_present = -1;
 static int hf_nfs4_nfl_mirrors = -1;
 static int hf_nfs4_nfl_util = -1;
 static int hf_nfs4_nfl_fhs = -1;
-static int hf_nfs4_mirror_index = -1;
 static int hf_nfs4_mirror_eff = -1;
 static int hf_nfs4_nfl_first_stripe_index = -1;
 static int hf_nfs4_lrf_body_content = -1;
@@ -908,6 +908,7 @@ static expert_field ei_nfs_too_many_ops = EI_INIT;
 static expert_field ei_nfs_not_vnx_file = EI_INIT;
 static expert_field ei_protocol_violation = EI_INIT;
 static expert_field ei_nfs_too_many_bitmaps = EI_INIT;
+static expert_field ei_nfs4_stateid_deprecated = EI_INIT;
 
 static const true_false_string tfs_read_write = { "Read", "Write" };
 
@@ -2233,11 +2234,9 @@ dissect_fhandle_data(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *
 	/* Create a unique hash value for the filehandle using CRC32 */
 	{
 		guint32 fhhash;
-		guint8 *fh_array;
 		proto_item *fh_item = NULL;
 
-		fh_array = (guint8 *)tvb_memdup(wmem_packet_scope(), tvb, offset, fhlen);
-		fhhash = crc32_ccitt(fh_array, fhlen);
+		fhhash = crc32_ccitt_tvb_offset(tvb, offset, fhlen);
 
 		if (hidden) {
 			fh_item = proto_tree_add_uint(tree, hf_nfs_fh_hash, NULL, 0,
@@ -7391,7 +7390,7 @@ dissect_nfs4_clientaddr(tvbuff_t *tvb, int offset, proto_tree *tree)
 	guint16 port;
 	int	addr_offset;
 	guint32 ipv4;
-	struct e_in6_addr ipv6;
+	ws_in6_addr ipv6;
 	address addr;
 	proto_item* ti;
 
@@ -7801,35 +7800,32 @@ dissect_nfs4_open_rflags(tvbuff_t *tvb, int offset, proto_tree *tree)
 static int
 dissect_nfs4_stateid(tvbuff_t *tvb, int offset, proto_tree *tree, guint16 *hash)
 {
-	proto_item *sh_item;
-	proto_item *soh_item;
-	proto_tree *newftree;
-	proto_item *fitem;
-	guint16	    sid_hash;
-	guint8	   *sidh_array;
-	guint8     *other_array;
-	guint32     other_hash;
-	int         old_offset = offset;
+	guint16		 stateid_hash;
+	guint32		 other_hash;
+	proto_item	*sitem, *hitem, *oth_item;
+	proto_tree	*stateid_tree;
+	int		 old_offset = offset;
 
-	newftree = proto_tree_add_subtree(tree, tvb, offset, 4, ett_nfs4_stateid, &fitem, "stateid");
+	sitem = proto_tree_add_bytes_format(tree, hf_nfs4_stateid, tvb, offset, 16, NULL, "StateID");
+	stateid_tree = proto_item_add_subtree(sitem, ett_nfs4_stateid);
 
-	sidh_array = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, 16, ENC_ASCII);
-	sid_hash = crc16_ccitt(sidh_array, 16);
+	stateid_hash = crc16_ccitt_tvb_offset(tvb, offset, 16);
+	hitem = proto_tree_add_uint(stateid_tree, hf_nfs4_stateid_hash, tvb, offset, 16, stateid_hash);
+	PROTO_ITEM_SET_GENERATED(hitem);
 
-	sh_item = proto_tree_add_uint(newftree, hf_nfs4_stateid_hash, tvb, offset, 16, sid_hash);
-	PROTO_ITEM_SET_GENERATED(sh_item);
-	offset = dissect_rpc_uint32(tvb, newftree, hf_nfs4_seqid, offset);
-	proto_tree_add_item(newftree, hf_nfs4_stateid_other, tvb, offset, 12, ENC_NA);
-	other_array = (guint8 *)tvb_memdup(wmem_packet_scope(), tvb, offset, 12);
-	other_hash = crc32_ccitt(other_array, 12);
-	soh_item = proto_tree_add_uint(newftree, hf_nfs4_stateid_other_hash, tvb, offset, 12, other_hash);
-	PROTO_ITEM_SET_GENERATED(soh_item);
+	offset = dissect_rpc_uint32(tvb, sitem, hf_nfs4_seqid_stateid, offset);
+
+	proto_tree_add_item(stateid_tree, hf_nfs4_stateid_other, tvb, offset, 12, ENC_NA);
+
+	other_hash = crc16_ccitt_tvb_offset(tvb, offset, 12);
+	oth_item = proto_tree_add_uint(stateid_tree, hf_nfs4_stateid_other_hash, tvb, offset, 12, other_hash);
+	PROTO_ITEM_SET_GENERATED(oth_item);
 	offset+=12;
 
 	if (hash)
-		*hash = sid_hash;
+		*hash = stateid_hash;
 
-	proto_item_set_len(fitem, offset - old_offset);
+	proto_item_set_len(sitem, offset - old_offset);
 
 	return offset;
 }
@@ -8418,9 +8414,7 @@ dissect_nfs4_app_data_block(tvbuff_t *tvb, int offset, proto_tree *tree, guint32
 	proto_item *fitem;
 
 	guint32     pattern_hash;
-        guint8     *pattern_array;
-        guint       pattern_len;
-
+	guint       pattern_len;
 
 	offset = dissect_rpc_uint64(tvb, tree, hf_nfs4_offset, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_nfs4_block_size, offset);
@@ -8432,8 +8426,7 @@ dissect_nfs4_app_data_block(tvbuff_t *tvb, int offset, proto_tree *tree, guint32
 	pattern_len = tvb_get_ntohl(tvb, offset);
 	offset += 4;
 
-	pattern_array = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, pattern_len, ENC_ASCII);
-	pattern_hash = crc32_ccitt(pattern_array, pattern_len);
+	pattern_hash = crc32_ccitt_tvb_offset(tvb, offset, pattern_len);
 	fitem = proto_tree_add_uint(tree, hf_nfs4_pattern_hash, tvb, offset, pattern_len, pattern_hash);
 	PROTO_ITEM_SET_GENERATED(fitem);
 	proto_item_set_len(fitem, pattern_len);
@@ -9249,9 +9242,10 @@ dissect_nfs4_layoutget(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree
 						civ);
 		} else if (layout_type == LAYOUT4_FLEX_FILES) {
 			guint	ds_count, fh_count;
-			proto_tree *ds_tree;
-			proto_item *ds_fitem;
+			proto_item *ds_item, *mirrors_item, *subitem;
+			proto_tree *ds_tree, *mirrors_tree;
 			int end_offset = offset;
+			int mirror_start_offset, ds_start_offset;
 
 			/* NFS Flex Files */
 			end_offset += tvb_get_ntohl(tvb, offset) + 4;
@@ -9262,27 +9256,28 @@ dissect_nfs4_layoutget(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree
 
 			/* Len of mirror list */
 			sub_num = tvb_get_ntohl(tvb, offset);
+			mirrors_item = proto_tree_add_uint_format(newtree, hf_nfs4_nfl_mirrors,
+				tvb, offset, 4, sub_num, "Mirrors (%u)", sub_num);
 			offset += 4;
 
+			mirrors_tree = proto_item_add_subtree(mirrors_item, ett_nfs4_layoutseg_sub);
+
 			for (i = 0; i < sub_num; i++) {
-				sub_fitem = proto_tree_add_item(newtree,
-						hf_nfs4_nfl_mirrors, tvb,
-						offset, 4, i);
+
+				mirror_start_offset = offset;
+				subtree = proto_tree_add_subtree_format(mirrors_tree, tvb, offset, -1,
+						ett_nfs4_layoutseg_sub, &subitem,
+						"Mirror: %u", i);
 
 				/* data server count */
 				ds_count = tvb_get_ntohl(tvb, offset);
 				offset += 4;
 
-				subtree = proto_item_add_subtree(sub_fitem,
-						ett_nfs4_layoutseg_sub);
-
 				for (j = 0; j < ds_count; j++) {
-					ds_fitem = proto_tree_add_item(subtree,
-							hf_nfs4_mirror_index, tvb,
-							offset, 4, j);
-
-					ds_tree = proto_item_add_subtree(ds_fitem,
-							ett_nfs4_layoutseg_sub);
+					ds_start_offset = offset;
+					ds_tree = proto_tree_add_subtree_format(subtree, tvb, offset, -1,
+							ett_nfs4_layoutseg_sub, &ds_item,
+							"Data Server: %u", j);
 
 					offset = dissect_nfs4_deviceid(tvb, offset,
 							ds_tree);
@@ -9304,7 +9299,11 @@ dissect_nfs4_layoutget(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree
 					offset = dissect_nfs_utf8string(tvb, offset,
 							ds_tree, hf_nfs4_ff_synthetic_owner_group,
 							NULL);
+
+					proto_item_set_len(ds_item, offset - ds_start_offset);
 				}
+
+				proto_item_set_len(subitem, offset - mirror_start_offset);
 			}
 
 			proto_tree_add_bitmask(newtree, tvb, offset, hf_nfs4_ff_layout_flags,
@@ -9539,7 +9538,6 @@ dissect_nfs4_request_op(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tre
 	guint	    current_tier    = 5;
 	guint	    first_operation = 1;
 	/*guint name_offset = 0;*/
-	guint8	   *clientid_array;
 	guint16	    sid_hash;
 	guint16	    clientid_hash   = 0;
 	guint32	    ops;
@@ -9865,8 +9863,7 @@ dissect_nfs4_request_op(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tre
 			break;
 
 		case NFS4_OP_RENEW:
-			clientid_array = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, 8, ENC_ASCII);
-			clientid_hash = crc16_ccitt(clientid_array, 8);
+			clientid_hash = crc16_ccitt_tvb_offset(tvb, offset, 8);
 			offset = dissect_rpc_uint64(tvb, newftree, hf_nfs4_clientid, offset);
 			wmem_strbuf_append_printf (op_summary[ops_counter].optext, " CID: 0x%04x", clientid_hash);
 
@@ -10363,7 +10360,7 @@ dissect_nfs4_offload_status_res(tvbuff_t *tvb, int offset, proto_tree *tree)
 	for (i = 0; i < count; i++) {
 		ss_fitem = proto_tree_add_item(subtree,
 				hf_nfs4_offload_status_index,
-				tvb, offset, 4, i);
+				tvb, offset, 4, ENC_BIG_ENDIAN);
 
 		ss_tree = proto_item_add_subtree(ss_fitem,
 				ett_nfs4_osr_complete_sub);
@@ -10386,7 +10383,7 @@ dissect_nfs4_response_op(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tr
 	guint32	    summary_counter;
 	guint32	    opcode, status;
 	const char *opname;
-	proto_item *fitem;
+	proto_item *fitem, *ti;
 	proto_tree *ftree	    = NULL;
 	proto_tree *newftree	    = NULL;
 	nfs4_operation_summary *op_summary;
@@ -10466,7 +10463,9 @@ dissect_nfs4_response_op(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tr
 			break;
 
 		case NFS4_OP_CLOSE:
-			offset = dissect_nfs4_stateid(tvb, offset, newftree, NULL);
+			ti = proto_tree_add_item(newftree, hf_nfs4_stateid, tvb, offset, 16, ENC_NA);
+			expert_add_info(pinfo, ti, &ei_nfs4_stateid_deprecated);
+			offset += 16;
 			break;
 
 		case NFS4_OP_COMMIT:
@@ -12351,11 +12350,22 @@ proto_register_nfs(void)
 			"EOF", "nfs.dirlist4.eof", FT_BOOLEAN, BASE_NONE,
 			TFS(&tfs_yes_no), 0x0, "There are no more entries", HFILL }},
 
-#if 0
-		{ &hf_nfs4_stateid, {
-			"stateid", "nfs.stateid4", FT_UINT64, BASE_DEC,
+		/* StateID */
+		{ &hf_nfs4_stateid,{
+			"StateID", "nfs.stateid", FT_BYTES, BASE_NONE,
 			NULL, 0, NULL, HFILL }},
-#endif
+		{ &hf_nfs4_stateid_hash,{
+			"StateID Hash", "nfs.stateid.hash", FT_UINT16, BASE_HEX,
+			NULL, 0, "CRC-16 hash", HFILL }},
+		{ &hf_nfs4_seqid_stateid, {
+			"StateID seqid", "nfs.stateid.seqid", FT_UINT32, BASE_DEC,
+			NULL, 0, NULL, HFILL }},
+		{ &hf_nfs4_stateid_other,{
+			"StateID Other", "nfs.stateid.other", FT_BYTES, BASE_NONE,
+			NULL, 0, "Unique component of StateID", HFILL }},
+		{ &hf_nfs4_stateid_other_hash,{
+			"StateID Other hash", "nfs.stateid.other_hash", FT_UINT16, BASE_HEX,
+			NULL, 0, "CRC-16 hash", HFILL }},
 
 		{ &hf_nfs4_offset, {
 			"offset", "nfs.offset4", FT_UINT64, BASE_DEC,
@@ -12775,18 +12785,6 @@ proto_register_nfs(void)
 			"id", "nfs.nfs_client_id4.id", FT_BYTES, BASE_NONE,
 			NULL, 0, NULL, HFILL }},
 
-		{ &hf_nfs4_stateid_other, {
-			"Data", "nfs.stateid4.other", FT_BYTES, BASE_NONE,
-			NULL, 0, NULL, HFILL }},
-
-		{ &hf_nfs4_stateid_hash, {
-			"StateID Hash", "nfs.stateid4.hash", FT_UINT16, BASE_HEX,
-			NULL, 0, NULL, HFILL }},
-
-		{ &hf_nfs4_stateid_other_hash, {
-			"Data hash (CRC-32)", "nfs.stateid4.other.hash", FT_UINT32, BASE_HEX,
-			NULL, 0, NULL, HFILL }},
-
 		{ &hf_nfs4_aclflags, {
 			"ACL flags", "nfs.acl.flags", FT_UINT32, BASE_DEC,
 			NULL, 0, NULL, HFILL }},
@@ -13132,10 +13130,6 @@ proto_register_nfs(void)
 			"file handles", "nfs.nfl_fhs", FT_UINT32, BASE_HEX,
 			NULL, 0, NULL, HFILL }},
 
-		{ &hf_nfs4_mirror_index, {
-			"Data Server", "nfs.nff_mirror_index", FT_UINT32, BASE_DEC,
-			NULL, 0, NULL, HFILL }},
-
 		{ &hf_nfs4_mirror_eff, {
 			"mirror efficiency", "nfs.nff_mirror_eff", FT_UINT32, BASE_HEX,
 			NULL, 0, NULL, HFILL }},
@@ -13454,7 +13448,7 @@ proto_register_nfs(void)
 		    "Opcode", "nfs.cb.operation", FT_UINT32, BASE_DEC|BASE_EXT_STRING,
 		    &names_nfs_cb_operation_ext, 0, NULL, HFILL }},
 		{ &hf_nfs4_lrs_present, {
-			"Stateid present?", "nfs.lrs_present", FT_BOOLEAN, BASE_NONE,
+			"StateID present?", "nfs.lrs_present", FT_BOOLEAN, BASE_NONE,
 			TFS(&tfs_yes_no), 0x0, NULL, HFILL }},
 		{ &hf_nfs4_cb_truncate, {
 		    "Truncate?", "nfs.truncate", FT_BOOLEAN, BASE_NONE,
@@ -13652,11 +13646,11 @@ proto_register_nfs(void)
 			TFS(&tfs_set_notset), 0x00001000, NULL, HFILL}},
 
 		{ &hf_nfs4_test_stateid_arg, {
-			"Stateid List", "nfs.test_stateid.stateids",
+			"StateID List", "nfs.test_stateid.stateids",
 			FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL}},
 
 		{ &hf_nfs4_test_stateid_res, {
-			"Stateid Result List", "nfs.test_stateid.results",
+			"StateID Result List", "nfs.test_stateid.results",
 			FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL}},
 
 		{ &hf_nfs4_seek_data_content, {
@@ -14171,6 +14165,7 @@ proto_register_nfs(void)
 		&ett_nfs4_write_same,
 		&ett_nfs4_fh_pd_flags,
 		&ett_nfs4_listxattr_names
+
 	};
 
 	static ei_register_info ei[] = {
@@ -14179,6 +14174,7 @@ proto_register_nfs(void)
 		{ &ei_protocol_violation, { "nfs.protocol_violation", PI_PROTOCOL, PI_WARN,
 			"Per RFCs 3530 and 5661 an attribute mask is required but was not provided.", EXPFILL }},
 		{ &ei_nfs_too_many_bitmaps, { "nfs.too_many_bitmaps", PI_PROTOCOL, PI_NOTE, "Too many bitmap array items", EXPFILL }},
+		{ &ei_nfs4_stateid_deprecated, { "nfs.stateid.deprecated", PI_PROTOCOL, PI_WARN, "State ID deprecated in CLOSE responses [RFC7530 16.2.5]", EXPFILL }},
 	};
 
 	module_t *nfs_module;

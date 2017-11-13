@@ -1,7 +1,7 @@
 /* packet-mqtt.c
  * Routines for MQTT Protocol dissection
- * http://mqtt.org
- * This dissector dissects MQTT data transfers as per MQTT V3.1 and V3.1.1 Protocol Specification
+ *
+ * MQTT v5.0 support sponsored by 1byt3 <customers at 1byt3.com>
  *
  * By Lakshmi Narayana Madala  <madalanarayana@outlook.com>
  *    Stig Bjorlykke  <stig@bjorlykke.org>
@@ -25,8 +25,29 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+/*
+ * Protocol description:
+ *
+ * MQTT is a Client Server publish/subscribe messaging transport
+ * protocol. The protocol runs over TCP/IP, or over other network
+ * protocols that provide ordered, lossless, bi-directional
+ * connections.
+ *
+ * MQTT v3.1 specification:
+ * http://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html
+ *
+ * MQTT v3.1.1 specification:
+ * http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/
+ *
+ * MQTT v5.0 specification:
+ * http://docs.oasis-open.org/mqtt/mqtt/v5.0/
+ *
+ */
+
 #include "config.h"
 #include <epan/packet.h>
+#include <epan/strutil.h>
+#include <epan/uat.h>
 #include <epan/dwarf.h>
 #include "packet-tcp.h"
 #include "packet-ssl.h"
@@ -34,9 +55,14 @@
 #define MQTT_DEFAULT_PORT     1883 /* IANA registered under service name as mqtt */
 #define MQTT_SSL_DEFAULT_PORT 8883 /* IANA registered under service name secure-mqtt */
 
+/* MQTT Protocol Versions */
+#define MQTT_PROTO_V31      3
+#define MQTT_PROTO_V311     4
+#define MQTT_PROTO_V50      5
+
 #define MQTT_HDR_SIZE_BEFORE_LEN 1
 
-/* MQTT MEssage Types */
+/* MQTT Message Types */
 #define MQTT_RESERVED        0
 #define MQTT_CONNECT         1
 #define MQTT_CONNACK         2
@@ -52,16 +78,33 @@
 #define MQTT_PINGREQ        12
 #define MQTT_PINGRESP       13
 #define MQTT_DISCONNECT     14
-#define MQTT_RESERVED_15    15
+#define MQTT_AUTH           15
+#define MQTT_RESERVED_16    16
 
 /* Flag Values to extract fields */
-#define MQTT_MASK_MSG_TYPE      0xF0
-#define MQTT_MASK_QOS           0x06
-#define MQTT_MASK_DUP_FLAG      0x08
-#define MQTT_MASK_RETAIN        0x01
+#define MQTT_MASK_MSG_TYPE          0xF0
+#define MQTT_MASK_HDR_RESERVED      0x0F
+#define MQTT_MASK_HDR_DUP_RESERVED  0x07
+#define MQTT_MASK_QOS               0x06
+#define MQTT_MASK_DUP_FLAG          0x08
+#define MQTT_MASK_RETAIN            0x01
+
+/* MQTT v5.0 Flag Values for the Subscription Options @ Subscribe Packet */
+#define MQTT_MASK_SUBS_QOS          0x03
+#define MQTT_MASK_SUBS_NL           0x04
+#define MQTT_MASK_SUBS_RAP          0x08
+#define MQTT_MASK_SUBS_RETAIN       0x30
+#define MQTT_MASK_SUBS_RESERVED     0xC0
 
 void proto_register_mqtt(void);
 void proto_reg_handoff_mqtt(void);
+
+static const value_string mqtt_protocol_version_vals[] = {
+  { MQTT_PROTO_V31,        "MQTT v3.1" },
+  { MQTT_PROTO_V311,       "MQTT v3.1.1" },
+  { MQTT_PROTO_V50,        "MQTT v5.0" },
+  { 0,                     NULL }
+};
 
 static const value_string mqtt_msgtype_vals[] = {
   { MQTT_RESERVED,          "Reserved" },
@@ -79,7 +122,8 @@ static const value_string mqtt_msgtype_vals[] = {
   { MQTT_PINGREQ,           "Ping Request" },
   { MQTT_PINGRESP,          "Ping Response" },
   { MQTT_DISCONNECT,        "Disconnect Req" },
-  { MQTT_RESERVED_15,       "Reserved" },
+  { MQTT_AUTH,              "Authentication Exchange" },
+  { MQTT_RESERVED_16,       "Reserved" },
   { 0,                      NULL }
 };
 static value_string_ext mqtt_msgtype_vals_ext = VALUE_STRING_EXT_INIT(mqtt_msgtype_vals);
@@ -136,6 +180,110 @@ static const value_string mqtt_conack_vals[] = {
 #define MQTT_CONACKMASK_RESERVED 0xFE
 #define MQTT_CONACKMASK_SP       0x01
 
+/* The protocol version is present in the CONNECT message. */
+typedef struct {
+    guint8 runtime_proto_version;
+} mqtt_conv_t;
+
+typedef struct _mqtt_message_decode_t {
+  guint   match_criteria;
+  char   *topic_pattern;
+  GRegex *topic_regex;
+  char   *payload_proto_name;
+  dissector_handle_t payload_proto;
+} mqtt_message_decode_t;
+
+#define MATCH_CRITERIA_EQUAL        0
+#define MATCH_CRITERIA_CONTAINS     1
+#define MATCH_CRITERIA_STARTS_WITH  2
+#define MATCH_CRITERIA_ENDS_WITH    3
+#define MATCH_CRITERIA_REGEX        4
+
+static const value_string match_criteria[] = {
+  { MATCH_CRITERIA_EQUAL,       "Equal to" },
+  { MATCH_CRITERIA_CONTAINS,    "Contains" },
+  { MATCH_CRITERIA_STARTS_WITH, "Starts with" },
+  { MATCH_CRITERIA_ENDS_WITH,   "Ends with" },
+  { MATCH_CRITERIA_REGEX,       "Regular Expression" },
+  { 0, NULL }
+};
+
+#define PROP_PAYLOAD_FORMAT_INDICATOR          0x01
+#define PROP_PUBLICATION_EXPIRY_INTERVAL       0x02
+#define PROP_CONTENT_TYPE                      0x03
+#define PROP_RESPONSE_TOPIC                    0x08
+#define PROP_CORRELATION_DATA                  0x09
+#define PROP_SUBSCRIPTION_IDENTIFIER           0x0B
+#define PROP_SESSION_EXPIRY_INTERVAL           0x11
+#define PROP_ASSIGNED_CLIENT_IDENTIFIER        0x12
+#define PROP_SERVER_KEEP_ALIVE                 0x13
+#define PROP_AUTH_METHOD                       0x15
+#define PROP_AUTH_DATA                         0x16
+#define PROP_REQUEST_PROBLEM_INFORMATION       0x17
+#define PROP_WILL_DELAY_INTERVAL               0x18
+#define PROP_REQUEST_RESPONSE_INFORMATION      0x19
+#define PROP_RESPONSE_INFORMATION              0x1A
+#define PROP_SERVER_REFERENCE                  0x1C
+#define PROP_REASON_STRING                     0x1F
+#define PROP_RECEIVE_MAXIMUM                   0x21
+#define PROP_TOPIC_ALIAS_MAXIMUM               0x22
+#define PROP_TOPIC_ALIAS                       0x23
+#define PROP_MAXIMUM_QOS                       0x24
+#define PROP_RETAIN_AVAILABLE                  0x25
+#define PROP_USER_PROPERTY                     0x26
+#define PROP_MAXIMUM_PACKET_SIZE               0x27
+#define PROP_WILDCARD_SUBSCRIPTION_AVAILABLE   0x28
+#define PROP_SUBSCRIPTION_IDENTIFIER_AVAILABLE 0x29
+#define PROP_SHARED_SUBSCRIPTION_AVAILABLE     0x2A
+
+static const value_string mqtt_property_vals[] = {
+  { PROP_PAYLOAD_FORMAT_INDICATOR,          "Payload Format Indicator" },
+  { PROP_PUBLICATION_EXPIRY_INTERVAL,       "Publication Expiry Interval" },
+  { PROP_CONTENT_TYPE,                      "Content Type" },
+  { PROP_RESPONSE_TOPIC,                    "Response Topic" },
+  { PROP_CORRELATION_DATA,                  "Correlation Data" },
+  { PROP_SUBSCRIPTION_IDENTIFIER,           "Subscription Identifier" },
+  { PROP_SESSION_EXPIRY_INTERVAL,           "Session Expiry Interval" },
+  { PROP_ASSIGNED_CLIENT_IDENTIFIER,        "Assigned Client Identifier" },
+  { PROP_SERVER_KEEP_ALIVE,                 "Server Keep Alive" },
+  { PROP_AUTH_METHOD,                       "Authentication Method" },
+  { PROP_AUTH_DATA,                         "Authentication Data" },
+  { PROP_REQUEST_PROBLEM_INFORMATION,       "Request Problem Information" },
+  { PROP_WILL_DELAY_INTERVAL,               "Will Delay Interval" },
+  { PROP_REQUEST_RESPONSE_INFORMATION,      "Request Response Information" },
+  { PROP_RESPONSE_INFORMATION,              "Response Information" },
+  { PROP_SERVER_REFERENCE,                  "Server Reference" },
+  { PROP_REASON_STRING,                     "Reason String" },
+  { PROP_RECEIVE_MAXIMUM,                   "Receive Maximum" },
+  { PROP_TOPIC_ALIAS_MAXIMUM,               "Topic Alias Maximum" },
+  { PROP_TOPIC_ALIAS,                       "Topic Alias" },
+  { PROP_MAXIMUM_QOS,                       "Maximum QoS" },
+  { PROP_RETAIN_AVAILABLE,                  "Retain Available" },
+  { PROP_USER_PROPERTY,                     "User Property" },
+  { PROP_MAXIMUM_PACKET_SIZE,               "Maximum Packet Size" },
+  { PROP_WILDCARD_SUBSCRIPTION_AVAILABLE,   "Wildcard Subscription Available" },
+  { PROP_SUBSCRIPTION_IDENTIFIER_AVAILABLE, "Subscription Identifier Available" },
+  { PROP_SHARED_SUBSCRIPTION_AVAILABLE,     "Shared Subscription Available" },
+  { 0, NULL }
+};
+
+/* MQTT v5.0 Subscription Options, Retain Handling option */
+#define SUBSCRIPTION_RETAIN_SEND            0x00
+#define SUBSCRIPTION_RETAIN_SEND_DONT_EXIST 0x01
+#define SUBSCRIPTION_RETAIN_DONT_SEND       0x02
+#define SUBSCRIPTION_RETAIN_RESERVED        0x03
+
+static const value_string mqtt_subscription_retain_handling[] = {
+  { SUBSCRIPTION_RETAIN_SEND,            "Send msgs at subscription time" },
+  { SUBSCRIPTION_RETAIN_SEND_DONT_EXIST, "Send msgs if subscription does not exist" },
+  { SUBSCRIPTION_RETAIN_DONT_SEND,       "Do not send msgs at subscription time" },
+  { SUBSCRIPTION_RETAIN_RESERVED,        "Reserved" },
+  { 0, NULL }
+};
+
+static mqtt_message_decode_t *mqtt_message_decodes;
+static guint num_mqtt_message_decodes;
+
 static dissector_handle_t mqtt_handle;
 
 /* Initialize the protocol and registered fields */
@@ -145,9 +293,12 @@ static int proto_mqtt = -1;
 static int hf_mqtt_hdrflags = -1;
 static int hf_mqtt_msg_len = -1;
 static int hf_mqtt_msg_type = -1;
+static int hf_mqtt_reserved = -1;
 static int hf_mqtt_dup_flag = -1;
 static int hf_mqtt_qos_level = -1;
 static int hf_mqtt_retain = -1;
+static int hf_mqtt_retain_reserved = -1;
+static int hf_mqtt_conack_reserved = -1;
 static int hf_mqtt_conack_flags = -1;
 static int hf_mqtt_conackflag_reserved = -1;
 static int hf_mqtt_conackflag_sp = -1;
@@ -166,6 +317,7 @@ static int hf_mqtt_username = -1;
 static int hf_mqtt_passwd_len = -1;
 static int hf_mqtt_passwd = -1;
 static int hf_mqtt_pubmsg = -1;
+static int hf_mqtt_pubmsg_decoded = -1;
 static int hf_mqtt_proto_len = -1;
 static int hf_mqtt_proto_name = -1;
 static int hf_mqtt_client_id_len = -1;
@@ -180,6 +332,29 @@ static int hf_mqtt_conflag_will_flag = -1;
 static int hf_mqtt_conflag_clean_sess = -1;
 static int hf_mqtt_conflag_reserved = -1;
 static int hf_mqtt_keep_alive = -1;
+static int hf_mqtt_subscription_options = -1;
+static int hf_mqtt_reason_code = -1;
+
+/* MQTT v5.0 Subscribe Options */
+static int hf_mqtt_subscription_qos = -1;
+static int hf_mqtt_subscription_nl = -1;
+static int hf_mqtt_subscription_rap = -1;
+static int hf_mqtt_subscription_retain = -1;
+static int hf_mqtt_subscription_reserved = -1;
+
+/* MQTT v5.0 Properties */
+static int hf_mqtt_property_len = -1;
+static int hf_mqtt_property = -1;
+static int hf_mqtt_property_id = -1;
+static int hf_mqtt_prop_num = -1;
+static int hf_mqtt_prop_max_qos = -1;
+static int hf_mqtt_prop_unknown = -1;
+static int hf_mqtt_prop_string_len = -1;
+static int hf_mqtt_prop_string = -1;
+static int hf_mqtt_prop_key_len = -1;
+static int hf_mqtt_prop_key = -1;
+static int hf_mqtt_prop_value_len = -1;
+static int hf_mqtt_prop_value = -1;
 
 /* Initialize the subtree pointers */
 static gint ett_mqtt_hdr = -1;
@@ -187,6 +362,8 @@ static gint ett_mqtt_msg = -1;
 static gint ett_mqtt_hdr_flags = -1;
 static gint ett_mqtt_con_flags = -1;
 static gint ett_mqtt_conack_flags = -1;
+static gint ett_mqtt_property = -1;
+static gint ett_mqtt_subscription_flags = -1;
 
 /* Reassemble SMPP TCP segments */
 static gboolean reassemble_mqtt_over_tcp = TRUE;
@@ -201,8 +378,221 @@ static guint get_mqtt_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb,
 
   len_offset = dissect_uleb128(tvb, (offset + MQTT_HDR_SIZE_BEFORE_LEN), &msg_len);
 
-  /* Explicitly Downcast the value, because the length can never be more than 4 bytes */
+  /* Explicitly downcast the value, because the length can never be more than 4 bytes */
   return (guint)(GET_MQTT_PDU_LEN(msg_len, len_offset));
+}
+
+static void *mqtt_message_decode_copy_cb(void *dest, const void *orig, size_t len _U_)
+{
+  const mqtt_message_decode_t *o = (const mqtt_message_decode_t *)orig;
+  mqtt_message_decode_t *d = (mqtt_message_decode_t *)dest;
+
+  d->topic_pattern = g_strdup(o->topic_pattern);
+  d->payload_proto_name = g_strdup(o->payload_proto_name);
+
+  return d;
+}
+
+static gboolean mqtt_message_decode_update_cb(void *record, char **error)
+{
+  mqtt_message_decode_t *u = (mqtt_message_decode_t *)record;
+
+  if (u->topic_pattern == NULL || strlen(u->topic_pattern) == 0)
+  {
+    *error = g_strdup("Missing topic pattern");
+    return FALSE;
+  }
+
+  if (u->match_criteria == MATCH_CRITERIA_REGEX)
+  {
+    u->topic_regex = g_regex_new(u->topic_pattern, (GRegexCompileFlags) G_REGEX_OPTIMIZE, (GRegexMatchFlags) 0, NULL);
+    if (!u->topic_regex)
+    {
+      *error = g_strdup_printf("Invalid regex: %s", u->topic_pattern);
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+static void mqtt_message_decode_free_cb(void *record)
+{
+  mqtt_message_decode_t *u = (mqtt_message_decode_t *)record;
+
+  g_free(u->topic_pattern);
+  if (u->topic_regex)
+  {
+    g_regex_unref(u->topic_regex);
+  }
+  g_free(u->payload_proto_name);
+}
+
+UAT_VS_DEF(message_decode, match_criteria, mqtt_message_decode_t, guint, MATCH_CRITERIA_EQUAL, "Equal to")
+UAT_CSTRING_CB_DEF(message_decode, topic_pattern, mqtt_message_decode_t)
+UAT_PROTO_DEF(message_decode, payload_proto, payload_proto, payload_proto_name, mqtt_message_decode_t)
+
+static void mqtt_user_decode_message(proto_tree *tree, proto_tree *mqtt_tree, packet_info *pinfo, const guint8 *topic_str, tvbuff_t *msg_tvb)
+{
+  mqtt_message_decode_t *message_decode_entry = NULL;
+  size_t topic_str_len = strlen(topic_str);
+  size_t topic_pattern_len;
+  gboolean match_found = FALSE;
+
+  if (topic_str_len == 0)
+  {
+    /* No topic to match */
+    return;
+  }
+
+  for (guint i = 0; i < num_mqtt_message_decodes && !match_found; i++)
+  {
+    message_decode_entry = &mqtt_message_decodes[i];
+    switch (message_decode_entry->match_criteria)
+    {
+      case MATCH_CRITERIA_EQUAL:
+        match_found = (strcmp(topic_str, message_decode_entry->topic_pattern) == 0);
+        break;
+      case MATCH_CRITERIA_CONTAINS:
+        match_found = (strstr(topic_str, message_decode_entry->topic_pattern) != NULL);
+        break;
+      case MATCH_CRITERIA_STARTS_WITH:
+        topic_pattern_len = strlen(message_decode_entry->topic_pattern);
+        match_found = ((topic_str_len >= topic_pattern_len) &&
+                       (strncmp(topic_str, message_decode_entry->topic_pattern, topic_pattern_len) == 0));
+        break;
+      case MATCH_CRITERIA_ENDS_WITH:
+        topic_pattern_len = strlen(message_decode_entry->topic_pattern);
+        match_found = ((topic_str_len >= topic_pattern_len) &&
+                       (strcmp(topic_str + (topic_str_len - topic_pattern_len), message_decode_entry->topic_pattern) == 0));
+        break;
+      case MATCH_CRITERIA_REGEX:
+        if (message_decode_entry->topic_regex)
+        {
+          GMatchInfo *match_info = NULL;
+          g_regex_match(message_decode_entry->topic_regex, topic_str, (GRegexMatchFlags) 0, &match_info);
+          match_found = g_match_info_matches(match_info);
+          g_match_info_free(match_info);
+        }
+        break;
+      default:
+        /* Unknown match criteria */
+        break;
+    }
+  }
+
+  if (match_found)
+  {
+    proto_item *ti = proto_tree_add_string(mqtt_tree, hf_mqtt_pubmsg_decoded, msg_tvb, 0, -1,
+                                           message_decode_entry->payload_proto_name);
+    PROTO_ITEM_SET_GENERATED(ti);
+
+    call_dissector(message_decode_entry->payload_proto, msg_tvb, pinfo, tree);
+  }
+}
+
+static guint dissect_string(tvbuff_t *tvb, proto_tree *tree, guint offset, int hf_len, int hf_value)
+{
+  guint32 prop_len;
+
+  proto_tree_add_item_ret_uint(tree, hf_len, tvb, offset, 2, ENC_BIG_ENDIAN, &prop_len);
+  proto_tree_add_item(tree, hf_value, tvb, offset + 2, prop_len, ENC_UTF_8|ENC_NA);
+
+  return 2 + prop_len;
+}
+
+/* MQTT v5.0: dissect the MQTT properties */
+static guint dissect_mqtt_properties(tvbuff_t *tvb, proto_tree *mqtt_tree, guint offset)
+{
+  proto_tree *mqtt_prop_tree;
+  proto_item *ti;
+  guint64 vbi;
+
+  const guint mqtt_prop_offset = dissect_uleb128(tvb, offset, &vbi);
+  /* Property Length field can be stored in uint32 */
+  const guint mqtt_prop_len = (gint)vbi;
+
+  /* Add the MQTT branch to the main tree */
+  ti = proto_tree_add_item(mqtt_tree, hf_mqtt_property, tvb, offset, mqtt_prop_offset + mqtt_prop_len, ENC_NA);
+  mqtt_prop_tree = proto_item_add_subtree(ti, ett_mqtt_property);
+
+  proto_tree_add_item(mqtt_prop_tree, hf_mqtt_property_len, tvb, offset, mqtt_prop_offset, ENC_BIG_ENDIAN);
+  offset += mqtt_prop_offset;
+
+  const guint bytes_to_read = offset + mqtt_prop_len;
+  while (offset < bytes_to_read)
+  {
+    guint32 prop_id;
+    proto_tree_add_item_ret_uint(mqtt_prop_tree, hf_mqtt_property_id, tvb, offset, 1, ENC_BIG_ENDIAN, &prop_id);
+    offset += 1;
+
+    switch (prop_id)
+    {
+      case PROP_PAYLOAD_FORMAT_INDICATOR:
+      case PROP_REQUEST_PROBLEM_INFORMATION:
+      case PROP_REQUEST_RESPONSE_INFORMATION:
+      case PROP_RETAIN_AVAILABLE:
+      case PROP_WILDCARD_SUBSCRIPTION_AVAILABLE:
+      case PROP_SUBSCRIPTION_IDENTIFIER_AVAILABLE:
+      case PROP_SHARED_SUBSCRIPTION_AVAILABLE:
+        proto_tree_add_item(mqtt_prop_tree, hf_mqtt_prop_num, tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset += 1;
+        break;
+
+      case PROP_MAXIMUM_QOS:
+        proto_tree_add_item(mqtt_prop_tree, hf_mqtt_prop_max_qos, tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset += 1;
+        break;
+
+      case PROP_SERVER_KEEP_ALIVE:
+      case PROP_RECEIVE_MAXIMUM:
+      case PROP_TOPIC_ALIAS_MAXIMUM:
+      case PROP_TOPIC_ALIAS:
+        proto_tree_add_item(mqtt_prop_tree, hf_mqtt_prop_num, tvb, offset, 2, ENC_BIG_ENDIAN);
+        offset += 2;
+        break;
+
+      case PROP_PUBLICATION_EXPIRY_INTERVAL:
+      case PROP_SESSION_EXPIRY_INTERVAL:
+      case PROP_WILL_DELAY_INTERVAL:
+      case PROP_MAXIMUM_PACKET_SIZE:
+        proto_tree_add_item(mqtt_prop_tree, hf_mqtt_prop_num, tvb, offset, 4, ENC_BIG_ENDIAN);
+        offset += 4;
+        break;
+
+      case PROP_SUBSCRIPTION_IDENTIFIER:
+      {
+        guint8 vbi_offset = dissect_uleb128(tvb, offset, &vbi);
+        proto_tree_add_uint(mqtt_prop_tree, hf_mqtt_prop_num, tvb, offset, vbi_offset, (guint32)vbi);
+        offset += vbi_offset;
+        break;
+      }
+
+      case PROP_CONTENT_TYPE:
+      case PROP_RESPONSE_TOPIC:
+      case PROP_CORRELATION_DATA:
+      case PROP_ASSIGNED_CLIENT_IDENTIFIER:
+      case PROP_AUTH_METHOD:
+      case PROP_AUTH_DATA:
+      case PROP_RESPONSE_INFORMATION:
+      case PROP_SERVER_REFERENCE:
+      case PROP_REASON_STRING:
+        offset += dissect_string(tvb, mqtt_prop_tree, offset, hf_mqtt_prop_string_len, hf_mqtt_prop_string);
+        break;
+
+      case PROP_USER_PROPERTY:
+        offset += dissect_string(tvb, mqtt_prop_tree, offset, hf_mqtt_prop_key_len, hf_mqtt_prop_key);
+        offset += dissect_string(tvb, mqtt_prop_tree, offset, hf_mqtt_prop_value_len, hf_mqtt_prop_value);
+        break;
+
+      default:
+        proto_tree_add_item(mqtt_prop_tree, hf_mqtt_prop_unknown, tvb, offset, bytes_to_read - offset, ENC_UTF_8|ENC_NA);
+        offset += (bytes_to_read - offset);
+        break;
+    }
+  }
+
+  return mqtt_prop_offset + mqtt_prop_len;
 }
 
 /* Dissect the MQTT message */
@@ -210,8 +600,66 @@ static int dissect_mqtt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
 {
   guint8  mqtt_fixed_hdr;
   guint8  mqtt_msg_type;
+  proto_item *ti;
+  const guint8 *topic_str;
+  proto_tree *mqtt_tree;
+  guint64     mqtt_con_flags;
+  guint64     msg_len      = 0;
+  gint        mqtt_msg_len = 0;
+  guint32     mqtt_str_len;
+  guint16     mqtt_len_offset;
+  gint        mqtt_payload_len;
+  conversation_t *conv;
+  mqtt_conv_t *mqtt;
+  guint       offset = 0;
 
-  int offset = 0;
+  static const int *publish_fields[] = {
+    &hf_mqtt_msg_type,
+    &hf_mqtt_dup_flag,
+    &hf_mqtt_qos_level,
+    &hf_mqtt_retain,
+    NULL
+  };
+
+  static const int *v31_pubrel_sub_unsub_fields[] = {
+    &hf_mqtt_msg_type,
+    &hf_mqtt_dup_flag,
+    &hf_mqtt_qos_level,
+    &hf_mqtt_retain_reserved,
+    NULL
+  };
+
+  static const int *other_fields[] = {
+    &hf_mqtt_msg_type,
+    &hf_mqtt_reserved,
+    NULL
+  };
+
+  static const int *connect_flags[] = {
+    &hf_mqtt_conflag_user,
+    &hf_mqtt_conflag_passwd,
+    &hf_mqtt_conflag_will_retain,
+    &hf_mqtt_conflag_will_qos,
+    &hf_mqtt_conflag_will_flag,
+    &hf_mqtt_conflag_clean_sess,
+    &hf_mqtt_conflag_reserved,
+    NULL
+  };
+
+  static const int *connack_flags[] = {
+    &hf_mqtt_conackflag_reserved,
+    &hf_mqtt_conackflag_sp,
+    NULL
+  };
+
+  static const int *v50_subscription_flags[] = {
+    &hf_mqtt_subscription_reserved,
+    &hf_mqtt_subscription_retain,
+    &hf_mqtt_subscription_rap,
+    &hf_mqtt_subscription_nl,
+    &hf_mqtt_subscription_qos,
+    NULL
+  };
 
   /* Extract the message ID */
   mqtt_fixed_hdr = tvb_get_guint8(tvb, offset);
@@ -220,224 +668,308 @@ static int dissect_mqtt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
   col_set_str(pinfo->cinfo, COL_PROTOCOL, "MQTT");
   col_append_sep_str(pinfo->cinfo, COL_INFO, ", ", val_to_str_ext(mqtt_msg_type, &mqtt_msgtype_vals_ext, "Unknown (0x%02x)"));
 
-  if(tree)
+  /* Add the MQTT branch to the main tree */
+  ti = proto_tree_add_item(tree, proto_mqtt, tvb, 0, -1, ENC_NA);
+  mqtt_tree = proto_item_add_subtree(ti, ett_mqtt_hdr);
+
+  conv = find_or_create_conversation(pinfo);
+  mqtt = (mqtt_conv_t *)conversation_get_proto_data(conv, proto_mqtt);
+  if (mqtt == NULL)
   {
-    proto_item *ti;
-    proto_item *ti_mqtt;
+    mqtt = wmem_new0(wmem_file_scope(), mqtt_conv_t);
+    conversation_add_proto_data(conv, proto_mqtt, mqtt);
+  }
 
-    proto_tree *mqtt_tree;
-    proto_tree *mqtt_flag_tree;
+  mqtt_len_offset = dissect_uleb128(tvb, (offset + MQTT_HDR_SIZE_BEFORE_LEN), &msg_len);
 
-    guint8      mqtt_con_flags;
-    guint64     msg_len      = 0;
-    gint        mqtt_msg_len = 0;
-    guint16     mqtt_str_len;
-    guint16     mqtt_len_offset;
+  /* Explicit downcast, typically maximum length of message could be 4 bytes */
+  mqtt_msg_len = (gint) msg_len;
 
-    /* Add MQTT Branch to the main tree */
-    ti = proto_tree_add_item(tree, proto_mqtt, tvb, 0, -1, ENC_NA);
-    mqtt_tree = proto_item_add_subtree(ti, ett_mqtt_hdr);
+  /* Add the type to the MQTT tree item */
+  proto_item_append_text(mqtt_tree, ", %s", val_to_str_ext(mqtt_msg_type, &mqtt_msgtype_vals_ext, "Unknown (0x%02x)"));
 
-    mqtt_len_offset = dissect_uleb128(tvb, (offset + MQTT_HDR_SIZE_BEFORE_LEN), &msg_len);
+  if (mqtt_msg_type == MQTT_PUBLISH)
+  {
+    proto_tree_add_bitmask(mqtt_tree, tvb, offset, hf_mqtt_hdrflags, ett_mqtt_hdr_flags, publish_fields, ENC_BIG_ENDIAN);
+  }
+  else if (mqtt->runtime_proto_version == MQTT_PROTO_V31 &&
+           (mqtt_msg_type == MQTT_PUBREL ||
+            mqtt_msg_type == MQTT_SUBSCRIBE ||
+            mqtt_msg_type == MQTT_UNSUBSCRIBE))
+  {
+    proto_tree_add_bitmask(mqtt_tree, tvb, offset, hf_mqtt_hdrflags, ett_mqtt_hdr_flags, v31_pubrel_sub_unsub_fields, ENC_BIG_ENDIAN);
+  }
+  else
+  {
+    proto_tree_add_bitmask(mqtt_tree, tvb, offset, hf_mqtt_hdrflags, ett_mqtt_hdr_flags, other_fields, ENC_BIG_ENDIAN);
+  }
 
-    /* Explicit downcast, Typically maximum length of message could be 4 bytes */
-    mqtt_msg_len = (gint) msg_len;
+  offset += 1;
 
-    /* Add the type to MQTT tree item */
-    proto_item_append_text(mqtt_tree, ", %s", val_to_str_ext(mqtt_msg_type, &mqtt_msgtype_vals_ext, "Unknown (0x%02x)"));
+  /* Add the MQTT message length */
+  proto_tree_add_uint64(mqtt_tree, hf_mqtt_msg_len, tvb, offset, mqtt_len_offset, msg_len);
+  offset += mqtt_len_offset;
 
-    ti_mqtt = proto_tree_add_uint_format_value(mqtt_tree, hf_mqtt_hdrflags, tvb, offset, 1, mqtt_fixed_hdr, "0x%02x (%s)",
-                                               mqtt_fixed_hdr, val_to_str_ext(mqtt_msg_type, &mqtt_msgtype_vals_ext, "Unknown (0x%02x)"));
-    mqtt_flag_tree = proto_item_add_subtree(ti_mqtt, ett_mqtt_hdr_flags);
-    proto_tree_add_item(mqtt_flag_tree, hf_mqtt_msg_type,  tvb, offset, 1, ENC_BIG_ENDIAN);
-    proto_tree_add_item(mqtt_flag_tree, hf_mqtt_dup_flag,  tvb, offset, 1, ENC_BIG_ENDIAN);
-    proto_tree_add_item(mqtt_flag_tree, hf_mqtt_qos_level, tvb, offset, 1, ENC_BIG_ENDIAN);
-    proto_tree_add_item(mqtt_flag_tree, hf_mqtt_retain,    tvb, offset, 1, ENC_BIG_ENDIAN);
-    offset += 1;
+  switch (mqtt_msg_type)
+  {
+    case MQTT_CONNECT:
+      proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_proto_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
+      offset += 2;
 
-    /* Add MQTT message length */
-    proto_tree_add_uint64(mqtt_tree, hf_mqtt_msg_len, tvb, offset, mqtt_len_offset, msg_len);
-    offset += mqtt_len_offset;
+      proto_tree_add_item(mqtt_tree, hf_mqtt_proto_name, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+      offset += mqtt_str_len;
 
-    switch(mqtt_msg_type)
-    {
-      case MQTT_CONNECT:
-        /* TopicLen|Topic|MsgID|Message| */
-        mqtt_str_len = tvb_get_ntohs(tvb, offset);
-        proto_tree_add_item(mqtt_tree, hf_mqtt_proto_len, tvb, offset, 2, ENC_BIG_ENDIAN);
+      mqtt->runtime_proto_version = tvb_get_guint8(tvb, offset);
+
+      proto_tree_add_item(mqtt_tree, hf_mqtt_proto_ver, tvb, offset, 1, ENC_BIG_ENDIAN);
+      offset += 1;
+
+      proto_tree_add_bitmask_ret_uint64(mqtt_tree, tvb, offset, hf_mqtt_conflags,
+                                        ett_mqtt_con_flags, connect_flags, ENC_BIG_ENDIAN, &mqtt_con_flags);
+      offset += 1;
+
+      proto_tree_add_item(mqtt_tree, hf_mqtt_keep_alive, tvb, offset, 2, ENC_BIG_ENDIAN);
+      offset += 2;
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+      }
+
+      proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_client_id_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
+      offset += 2;
+
+      proto_tree_add_item(mqtt_tree, hf_mqtt_client_id, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+      offset += mqtt_str_len;
+
+      if (mqtt_con_flags & MQTT_CONMASK_WILLFLAG)
+      {
+        proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_will_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
         offset += 2;
 
-        proto_tree_add_item(mqtt_tree, hf_mqtt_proto_name, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+        proto_tree_add_item(mqtt_tree, hf_mqtt_will_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
         offset += mqtt_str_len;
+      }
 
-        proto_tree_add_item(mqtt_tree, hf_mqtt_proto_ver, tvb, offset, 1, ENC_BIG_ENDIAN);
-        offset += 1;
-
-        /* Create a new subtree for flags, and add all items under this tree */
-        mqtt_con_flags = tvb_get_guint8(tvb, offset);
-        ti_mqtt = proto_tree_add_item(mqtt_tree, hf_mqtt_conflags, tvb, offset, 1, ENC_BIG_ENDIAN);
-        mqtt_flag_tree = proto_item_add_subtree(ti_mqtt, ett_mqtt_con_flags);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_user,        tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_passwd,      tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_will_retain, tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_will_qos,    tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_will_flag,   tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_clean_sess,  tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conflag_reserved,    tvb, offset, 1, ENC_BIG_ENDIAN);
-        offset += 1;
-
-        proto_tree_add_item(mqtt_tree, hf_mqtt_keep_alive, tvb, offset, 2, ENC_BIG_ENDIAN);
+      if (mqtt_con_flags & MQTT_CONMASK_WILLFLAG)
+      {
+        proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_will_msg_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
         offset += 2;
 
-        mqtt_str_len = tvb_get_ntohs(tvb, offset);
-        proto_tree_add_item(mqtt_tree, hf_mqtt_client_id_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-        offset += 2;
-
-        proto_tree_add_item(mqtt_tree, hf_mqtt_client_id, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+        proto_tree_add_item(mqtt_tree, hf_mqtt_will_msg, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
         offset += mqtt_str_len;
+      }
 
-        if(mqtt_con_flags & MQTT_CONMASK_WILLFLAG)
-        {
-          mqtt_str_len = tvb_get_ntohs(tvb, offset);
-          proto_tree_add_item(mqtt_tree, hf_mqtt_will_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-
-          proto_tree_add_item(mqtt_tree, hf_mqtt_will_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
-          offset += mqtt_str_len;
-        }
-        if(mqtt_con_flags & MQTT_CONMASK_WILLFLAG)
-        {
-          mqtt_str_len = tvb_get_ntohs(tvb, offset);
-          proto_tree_add_item(mqtt_tree, hf_mqtt_will_msg_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-
-          proto_tree_add_item(mqtt_tree, hf_mqtt_will_msg, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
-          offset += mqtt_str_len;
-        }
-        if((mqtt_con_flags & MQTT_CONMASK_USER) && (tvb_reported_length_remaining(tvb, offset) > 0))
-        {
-          mqtt_str_len = tvb_get_ntohs(tvb, offset);
-          proto_tree_add_item(mqtt_tree, hf_mqtt_username_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-
-          proto_tree_add_item(mqtt_tree, hf_mqtt_username, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
-          offset += mqtt_str_len;
-        }
-        if((mqtt_con_flags & MQTT_CONMASK_PASSWD) && (tvb_reported_length_remaining(tvb, offset) > 0))
-        {
-          mqtt_str_len = tvb_get_ntohs(tvb, offset);
-          proto_tree_add_item(mqtt_tree, hf_mqtt_passwd_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-
-          proto_tree_add_item(mqtt_tree, hf_mqtt_passwd, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
-        }
-        break;
-
-      case MQTT_CONNACK:
-        /* Connection Ack contains only Return Code */
-        ti_mqtt = proto_tree_add_item(mqtt_tree, hf_mqtt_conack_flags, tvb, offset, 1, ENC_BIG_ENDIAN);
-        mqtt_flag_tree = proto_item_add_subtree(ti_mqtt, ett_mqtt_conack_flags);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conackflag_reserved, tvb, offset, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(mqtt_flag_tree, hf_mqtt_conackflag_sp, tvb, offset, 1, ENC_BIG_ENDIAN);
-        offset += 1;
-
-        proto_tree_add_item(mqtt_tree, hf_mqtt_conack_code, tvb, offset, 1, ENC_BIG_ENDIAN);
-        break;
-
-      case MQTT_PUBLISH:
-        /* TopicLen|Topic|MsgID|Message| */
-        mqtt_str_len = tvb_get_ntohs(tvb, offset);
-        proto_tree_add_item(mqtt_tree, hf_mqtt_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN);
+      if ((mqtt_con_flags & MQTT_CONMASK_USER) && (tvb_reported_length_remaining(tvb, offset) > 0))
+      {
+        proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_username_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
         offset += 2;
-        mqtt_msg_len -= 2;
+
+        proto_tree_add_item(mqtt_tree, hf_mqtt_username, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+        offset += mqtt_str_len;
+      }
+
+      if ((mqtt_con_flags & MQTT_CONMASK_PASSWD) && (tvb_reported_length_remaining(tvb, offset) > 0))
+      {
+        proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_passwd_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
+        offset += 2;
+
+        proto_tree_add_item(mqtt_tree, hf_mqtt_passwd, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+      }
+      break;
+
+    case MQTT_CONNACK:
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V31)
+      {
+        /* v3.1 Connection Ack only contains a reserved byte and the Return Code. */
+        proto_tree_add_item(mqtt_tree, hf_mqtt_conack_reserved, tvb, offset, 1, ENC_BIG_ENDIAN);
+      }
+      else
+      {
+        /* v3.1.1 Conn Ack contains the Conn Ack Flags and the Return Code. */
+        proto_tree_add_bitmask(mqtt_tree, tvb, offset, hf_mqtt_conack_flags,
+                               ett_mqtt_conack_flags, connack_flags, ENC_BIG_ENDIAN);
+      }
+      offset += 1;
+
+      proto_tree_add_item(mqtt_tree, hf_mqtt_conack_code, tvb, offset, 1, ENC_BIG_ENDIAN);
+      offset += 1;
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+      }
+      break;
+
+    case MQTT_PUBLISH:
+      /* TopicName|MsgID|Message| */
+      proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
+      offset += 2;
+
+      proto_tree_add_item_ret_string(mqtt_tree, hf_mqtt_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA,
+                                     wmem_epan_scope(), &topic_str);
+      offset += mqtt_str_len;
+
+      /* Message ID is included only when QoS > 0 */
+      if (mqtt_fixed_hdr & MQTT_MASK_QOS)
+      {
+        proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+        offset += 2;
+      }
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+      }
+
+      mqtt_payload_len = tvb_reported_length(tvb) - offset;
+      proto_tree_add_item(mqtt_tree, hf_mqtt_pubmsg, tvb, offset, mqtt_payload_len, ENC_UTF_8|ENC_NA);
+
+      if (num_mqtt_message_decodes > 0)
+      {
+        tvbuff_t *msg_tvb = tvb_new_subset_length(tvb, offset, mqtt_payload_len);
+        mqtt_user_decode_message(tree, mqtt_tree, pinfo, topic_str, msg_tvb);
+      }
+      break;
+
+    case MQTT_SUBSCRIBE:
+      /* After the Message Id field is found, the following fields must appear
+       * at least once:
+       * |TopicName|QoS|
+       */
+      proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+      offset += 2;
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+      }
+
+      while (offset < tvb_reported_length(tvb))
+      {
+        proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
+        offset += 2;
 
         proto_tree_add_item(mqtt_tree, hf_mqtt_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
         offset += mqtt_str_len;
-        mqtt_msg_len -= mqtt_str_len;
 
-        /* Message ID is included only when QOS > 0 */
-        if(mqtt_fixed_hdr & MQTT_MASK_QOS)
+        if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
         {
-          proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-          mqtt_msg_len -= 2;
+          proto_tree_add_bitmask(mqtt_tree, tvb, offset, hf_mqtt_subscription_options,
+                                 ett_mqtt_subscription_flags, v50_subscription_flags, ENC_BIG_ENDIAN);
         }
-        proto_tree_add_item(mqtt_tree, hf_mqtt_pubmsg, tvb, offset, mqtt_msg_len, ENC_UTF_8|ENC_NA);
-        break;
-
-      case MQTT_SUBSCRIBE:
-        /* Message Id followed by series of following elements
-         * |Length|Topic|QOS|
-         */
-        proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
-        offset += 2;
-        for(mqtt_msg_len -= 2; mqtt_msg_len > 0;)
+        else
         {
-          mqtt_str_len = tvb_get_ntohs(tvb, offset);
-          proto_tree_add_item(mqtt_tree, hf_mqtt_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-          mqtt_msg_len -= 2;
-
-          proto_tree_add_item(mqtt_tree, hf_mqtt_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
-          offset += mqtt_str_len;
-          mqtt_msg_len -= mqtt_str_len;
-
           proto_tree_add_item(mqtt_tree, hf_mqtt_sub_qos, tvb, offset, 1, ENC_BIG_ENDIAN);
-          offset += 1;
-          mqtt_msg_len -= 1;
         }
-        break;
+        offset += 1;
+      }
+      break;
 
-      case MQTT_UNSUBSCRIBE:
-        /* Message Id followed by series of following elements
-         * |Length|Topic|
-         */
-        proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+    case MQTT_UNSUBSCRIBE:
+      /* After the Message Id field is found, the following fields must appear
+       * at least once:
+       * |TopicName|
+       */
+      proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+      offset += 2;
+
+      while (offset < tvb_reported_length(tvb))
+      {
+        proto_tree_add_item_ret_uint(mqtt_tree, hf_mqtt_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN, &mqtt_str_len);
         offset += 2;
-        for(mqtt_msg_len -= 2; mqtt_msg_len > 0;)
-        {
-          mqtt_str_len = tvb_get_ntohs(tvb, offset);
-          proto_tree_add_item(mqtt_tree, hf_mqtt_topic_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-          offset += 2;
-          mqtt_msg_len -= 2;
 
-          proto_tree_add_item(mqtt_tree, hf_mqtt_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
-          offset += mqtt_str_len;
-          mqtt_msg_len -= mqtt_str_len;
-        }
-        break;
+        proto_tree_add_item(mqtt_tree, hf_mqtt_topic, tvb, offset, mqtt_str_len, ENC_UTF_8|ENC_NA);
+        offset += mqtt_str_len;
+      }
+      break;
 
-      case MQTT_SUBACK:
-        /* Message Id followed by a
-         * A vector of QOS information is left in the payload
-         * size of QOS filed is 1 byte
-         */
-        proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
-        offset += 2;
-        for(mqtt_msg_len -= 2; mqtt_msg_len > 0; mqtt_msg_len--)
+    case MQTT_SUBACK:
+      /* The SUBACK message contains a list of granted QoS levels that come
+       * after the Message Id field. The size of each QoS entry is 1 byte.
+       */
+      proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+      offset += 2;
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+      }
+
+      while (offset < tvb_reported_length(tvb))
+      {
+        proto_tree_add_item(mqtt_tree, hf_mqtt_suback_qos, tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset += 1;
+      }
+      break;
+
+    case MQTT_PUBACK:
+    case MQTT_PUBREC:
+    case MQTT_PUBREL:
+    case MQTT_PUBCOMP:
+      proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+      offset += 2;
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        proto_tree_add_item(mqtt_tree, hf_mqtt_reason_code, tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset += 1;
+
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+      }
+      break;
+
+    case MQTT_UNSUBACK:
+      proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
+      offset += 2;
+
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50)
+      {
+        offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+
+        while (offset < tvb_reported_length(tvb))
         {
-          proto_tree_add_item(mqtt_tree, hf_mqtt_suback_qos, tvb, offset, 1, ENC_BIG_ENDIAN);
+          proto_tree_add_item(mqtt_tree, hf_mqtt_reason_code, tvb, offset, 1, ENC_BIG_ENDIAN);
           offset += 1;
         }
-        break;
-
-      /* The following response code contains only msg-id */
-      case MQTT_PUBACK:
-      case MQTT_PUBREC:
-      case MQTT_PUBREL:
-      case MQTT_PUBCOMP:
-      case MQTT_UNSUBACK:
-        proto_tree_add_item(mqtt_tree, hf_mqtt_msgid, tvb, offset, 2, ENC_BIG_ENDIAN);
-        break;
+      }
+      break;
 
       /* The following messages don't have variable header */
-      case MQTT_PINGREQ:
-      case MQTT_PINGRESP:
-      case MQTT_DISCONNECT:
-        break;
-    }
+    case MQTT_PINGREQ:
+    case MQTT_PINGRESP:
+      break;
+
+    case MQTT_DISCONNECT:
+      /* MQTT v5.0: Byte 1 in the Variable Header is the Disconnect Reason Code.
+       * If the Remaining Length is less than 1 the value of 0x00
+       * (Normal disconnection) is used.
+       */
+      /* FALLTHROUGH */
+    case MQTT_AUTH:
+      /* MQTT v5.0: The Reason Code and Property Length can be omitted if
+       * the Reason Code is 0x00 (Success) and there are no Properties.
+       * In this case the AUTH has a Remaining Length of 0.
+       */
+      if (mqtt->runtime_proto_version == MQTT_PROTO_V50 && mqtt_msg_len > 0)
+      {
+        proto_tree_add_item(mqtt_tree, hf_mqtt_reason_code, tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset += 1;
+
+        /* 3.14.2.2 DISCONNECT Properties:
+         * If the Remaining Length is less than 2, a value of 0 is used.
+         * Let's assume that it also applies to AUTH, why? DISCONNECT and AUTH
+         * share the same structure with no payload.
+         */
+        if (mqtt_msg_len >= 2)
+        {
+          offset += dissect_mqtt_properties(tvb, mqtt_tree, offset);
+        }
+      }
+      break;
   }
-  return tvb_captured_length(tvb);
+
+  return offset;
 }
 
 /**
@@ -485,6 +1017,14 @@ void proto_register_mqtt(void)
       { "Message Type", "mqtt.msgtype",
         FT_UINT8, BASE_DEC | BASE_EXT_STRING, &mqtt_msgtype_vals_ext, MQTT_MASK_MSG_TYPE,
         NULL, HFILL }},
+    { &hf_mqtt_reserved,
+      { "Reserved", "mqtt.hdr_reserved",
+        FT_UINT8, BASE_DEC, NULL, MQTT_MASK_HDR_RESERVED,
+        "Fixed Header Reserved Field", HFILL }},
+    { &hf_mqtt_retain_reserved,
+      { "Reserved", "mqtt.retain_reserved",
+        FT_UINT8, BASE_DEC, NULL, MQTT_MASK_RETAIN,
+        "Fixed Header Reserved Field", HFILL }},
     { &hf_mqtt_dup_flag,
       { "DUP Flag", "mqtt.dupflag",
         FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQTT_MASK_DUP_FLAG,
@@ -498,6 +1038,10 @@ void proto_register_mqtt(void)
         FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQTT_MASK_RETAIN,
         NULL, HFILL }},
     /* Conn-Ack */
+    { &hf_mqtt_conack_reserved,
+      { "Reserved", "mqtt.conack.flags.reserved",
+        FT_BOOLEAN, 8, TFS(&tfs_set_notset), 0,
+        NULL, HFILL }},
     { &hf_mqtt_conack_flags,
       { "Acknowledge Flags", "mqtt.conack.flags",
         FT_UINT8, BASE_HEX, NULL, 0,
@@ -527,7 +1071,7 @@ void proto_register_mqtt(void)
       { "Granted QoS", "mqtt.suback.qos",
         FT_UINT8, BASE_DEC, VALS(mqtt_subqos_vals), 0,
         NULL, HFILL }},
-      { &hf_mqtt_topic_len,
+    { &hf_mqtt_topic_len,
       { "Topic Length", "mqtt.topic_len",
         FT_UINT16, BASE_DEC, NULL, 0,
         NULL, HFILL }},
@@ -571,6 +1115,10 @@ void proto_register_mqtt(void)
       { "Message", "mqtt.msg",
         FT_STRING, BASE_NONE, NULL, 0,
         NULL, HFILL }},
+    { &hf_mqtt_pubmsg_decoded,
+      { "Message decoded as", "mqtt.msg_decoded_as",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
     { &hf_mqtt_proto_len,
       { "Protocol Name Length", "mqtt.proto_len",
         FT_UINT16, BASE_DEC, NULL, 0,
@@ -589,8 +1137,8 @@ void proto_register_mqtt(void)
         NULL, HFILL }},
     { &hf_mqtt_proto_ver,
       { "Version", "mqtt.ver",
-        FT_UINT8, BASE_DEC, NULL, 0,
-        NULL, HFILL }},
+        FT_UINT8, BASE_DEC, VALS(mqtt_protocol_version_vals), 0,
+        "MQTT version", HFILL }},
     /* Connect Flags */
     { &hf_mqtt_conflags,
       { "Connect Flags", "mqtt.conflags",
@@ -627,7 +1175,85 @@ void proto_register_mqtt(void)
     { &hf_mqtt_keep_alive,
       { "Keep Alive", "mqtt.kalive",
         FT_UINT16, BASE_DEC, NULL, 0,
-        NULL, HFILL }}
+        NULL, HFILL }},
+    { &hf_mqtt_subscription_options,
+      { "Subscription Options", "mqtt.subscription_options",
+        FT_UINT8, BASE_HEX, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_subscription_qos,
+      { "QoS", "mqtt.subscription_options_qos",
+        FT_UINT8, BASE_DEC, VALS(mqtt_qos_vals), MQTT_MASK_SUBS_QOS,
+        NULL, HFILL }},
+    { &hf_mqtt_subscription_nl,
+      { "No Local", "mqtt.subscription_options_nl",
+        FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQTT_MASK_SUBS_NL,
+        NULL, HFILL }},
+    { &hf_mqtt_subscription_rap,
+      { "Retain As Published", "mqtt.subscription_options_rap",
+        FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQTT_MASK_SUBS_RAP,
+        NULL, HFILL }},
+    { &hf_mqtt_subscription_retain,
+      { "Retain Handling", "mqtt.subscription_options_retain",
+        FT_UINT8, BASE_DEC, VALS(mqtt_subscription_retain_handling), MQTT_MASK_SUBS_RETAIN,
+        NULL, HFILL }},
+    { &hf_mqtt_subscription_reserved,
+      { "Reserved", "mqtt.subscription_options_reserved",
+        FT_UINT8, BASE_HEX, NULL, MQTT_MASK_SUBS_RESERVED,
+        NULL, HFILL }},
+    { &hf_mqtt_reason_code,
+      { "Reason Code", "mqtt.reason_code",
+        FT_UINT8, BASE_DEC, NULL, 0,
+        "MQTT Reason Code", HFILL }},
+
+    /* Properties */
+    { &hf_mqtt_property,
+      { "Properties", "mqtt.properties",
+        FT_NONE, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_property_len,
+      { "Total Length", "mqtt.property_len",
+        FT_UINT64, BASE_DEC, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_property_id,
+      { "ID", "mqtt.property_id",
+        FT_UINT8, BASE_HEX, VALS(mqtt_property_vals), 0,
+        "Property Id", HFILL }},
+    { &hf_mqtt_prop_num,
+      { "Value", "mqtt.prop_number",
+        FT_UINT32, BASE_DEC, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_max_qos,
+      { "QoS", "mqtt.prop_max_qos_value",
+        FT_UINT8, BASE_DEC, VALS(mqtt_qos_vals), 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_unknown,
+      { "Unknown Property", "mqtt.prop_unknown",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_string_len,
+      { "Length", "mqtt.prop_string_len",
+        FT_UINT32, BASE_DEC, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_string,
+      { "Value", "mqtt.prop_string",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_key_len,
+      { "Key Length", "mqtt.prop_key_len",
+        FT_UINT32, BASE_DEC, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_key,
+      { "Key", "mqtt.prop_key",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_value_len,
+      { "Value Length", "mqtt.prop_value_len",
+        FT_UINT32, BASE_DEC, NULL, 0,
+        NULL, HFILL }},
+    { &hf_mqtt_prop_value,
+      { "Value", "mqtt.prop_value",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
   };
 
   /* Setup protocol subtree arrays */
@@ -636,8 +1262,35 @@ void proto_register_mqtt(void)
     &ett_mqtt_msg,
     &ett_mqtt_hdr_flags,
     &ett_mqtt_con_flags,
-    &ett_mqtt_conack_flags
+    &ett_mqtt_conack_flags,
+    &ett_mqtt_property,
+    &ett_mqtt_subscription_flags,
   };
+
+  static uat_field_t mqtt_message_decode_flds[] = {
+    UAT_FLD_VS(message_decode, match_criteria, "Match criteria", match_criteria, "Match criteria"),
+    UAT_FLD_CSTRING(message_decode, topic_pattern, "Topic pattern", "Pattern to match for the topic"),
+    UAT_FLD_PROTO(message_decode, payload_proto, "Payload protocol",
+                  "Protocol to be used for the message part of the matching topic"),
+    UAT_END_FIELDS
+  };
+
+  uat_t *message_uat = uat_new("Message Decoding",
+                               sizeof(mqtt_message_decode_t),
+                               "mqtt_message_decoding",
+                               TRUE,
+                               &mqtt_message_decodes,
+                               &num_mqtt_message_decodes,
+                               UAT_AFFECTS_DISSECTION, /* affects dissection of packets, but not set of named fields */
+                               "ChMQTTMessageDecoding",
+                               mqtt_message_decode_copy_cb,
+                               mqtt_message_decode_update_cb,
+                               mqtt_message_decode_free_cb,
+                               NULL,
+                               NULL,
+                               mqtt_message_decode_flds);
+
+  module_t *mqtt_module;
 
   /* Register protocol names and descriptions */
   proto_mqtt = proto_register_protocol("MQ Telemetry Transport Protocol", "MQTT", "mqtt");
@@ -647,6 +1300,13 @@ void proto_register_mqtt(void)
 
   proto_register_field_array(proto_mqtt, hf_mqtt, array_length(hf_mqtt));
   proto_register_subtree_array(ett_mqtt, array_length(ett_mqtt));
+
+  mqtt_module = prefs_register_protocol(proto_mqtt, NULL);
+
+  prefs_register_uat_preference(mqtt_module, "message_decode_table",
+                                "Message Decoding",
+                                "A table that enumerates custom message decodes to be used for a certain topic",
+                                message_uat);
 }
 
 /*

@@ -211,17 +211,8 @@ header_fields_copy_cb(void* n, const void* o, size_t siz _U_)
 	header_field_t* new_rec = (header_field_t*)n;
 	const header_field_t* old_rec = (const header_field_t*)o;
 
-	if (old_rec->header_name) {
-		new_rec->header_name = g_strdup(old_rec->header_name);
-	} else {
-		new_rec->header_name = NULL;
-	}
-
-	if (old_rec->header_desc) {
-		new_rec->header_desc = g_strdup(old_rec->header_desc);
-	} else {
-		new_rec->header_desc = NULL;
-	}
+	new_rec->header_name = g_strdup(old_rec->header_name);
+	new_rec->header_desc = g_strdup(old_rec->header_desc);
 
 	return new_rec;
 }
@@ -231,10 +222,8 @@ header_fields_free_cb(void*r)
 {
 	header_field_t* rec = (header_field_t*)r;
 
-	if (rec->header_name)
-		g_free(rec->header_name);
-	if (rec->header_desc)
-		g_free(rec->header_desc);
+	g_free(rec->header_name);
+	g_free(rec->header_desc);
 }
 
 UAT_CSTRING_CB_DEF(header_fields, header_name, header_field_t)
@@ -397,6 +386,7 @@ const value_string vals_http_status_code[] = {
 	{ 100, "Continue" },
 	{ 101, "Switching Protocols" },
 	{ 102, "Processing" },                     /* RFC 2518 */
+	{ 103, "Early Hints" },                    /* RFC-ietf-httpbis-early-hints-05 */
 	{ 199, "Informational - Others" },
 
 	{ 200, "OK"},
@@ -2204,7 +2194,7 @@ http_payload_subdissector(tvbuff_t *tvb, proto_tree *tree,
 			destport = pinfo->destport;
 		}
 
-		conv = find_conversation(pinfo->num, &pinfo->src, &pinfo->dst, PT_TCP, srcport, destport, 0);
+		conv = find_conversation(pinfo->num, &pinfo->src, &pinfo->dst, ENDPOINT_TCP, srcport, destport, 0);
 
 		/* We may get stuck in a recursion loop if we let process_tcp_payload() call us.
 		 * So, if the port in the URI is one we're registered for or we have set up a

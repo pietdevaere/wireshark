@@ -130,8 +130,8 @@ static int hf_smb2_max_ioctl_in_size = -1;
 static int hf_smb2_max_ioctl_out_size = -1;
 static int hf_smb2_flags = -1;
 static int hf_smb2_required_buffer_size = -1;
-static int hf_smb2_getinfo_size = -1;
-static int hf_smb2_getinfo_offset = -1;
+static int hf_smb2_getinfo_input_size = -1;
+static int hf_smb2_getinfo_input_offset = -1;
 static int hf_smb2_getinfo_additional = -1;
 static int hf_smb2_getinfo_flags = -1;
 static int hf_smb2_setinfo_size = -1;
@@ -855,6 +855,11 @@ smb2stat_packet(void *pss, packet_info *pinfo, epan_dissect_t *edt _U_, const vo
 	if(!(si->flags&SMB2_FLAGS_RESPONSE)){
 		return 0;
 	}
+	/* We should not include cancel and oplock break requests either */
+	if (si->opcode == SMB2_COM_CANCEL || si->opcode == SMB2_COM_BREAK) {
+		return 0;
+	}
+
 	/* if we haven't seen the request, just ignore it */
 	if(!si->saved){
 		return 0;
@@ -4727,12 +4732,15 @@ dissect_smb2_getinfo_request(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 	offset += 4;
 
 	/* offset */
-	offset_item = proto_tree_add_item_ret_uint(tree, hf_smb2_getinfo_offset, tvb, offset, 2, ENC_LITTLE_ENDIAN, &getinfo_offset);
-	/* XXX - check that the two reserved bytes are zero? */
-	offset += 4;
+	offset_item = proto_tree_add_item_ret_uint(tree, hf_smb2_getinfo_input_offset, tvb, offset, 2, ENC_LITTLE_ENDIAN, &getinfo_offset);
+	offset += 2;
+
+	/* reserved */
+	proto_tree_add_item(tree, hf_smb2_reserved, tvb, offset, 2, ENC_NA);
+	offset += 2;
 
 	/* size */
-	proto_tree_add_item_ret_uint(tree, hf_smb2_getinfo_size, tvb, offset, 4, ENC_LITTLE_ENDIAN, &getinfo_size);
+	proto_tree_add_item_ret_uint(tree, hf_smb2_getinfo_input_size, tvb, offset, 4, ENC_LITTLE_ENDIAN, &getinfo_size);
 	offset += 4;
 
 	/* parameters */
@@ -7981,7 +7989,7 @@ dissect_smb2_create_request(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 			si->saved->extra_info = NULL;
 			si->saved->extra_info_type = SMB2_EI_NONE;
 		}
-		if (si->saved && f_olb.len && f_olb.len<256) {
+		if (si->saved && f_olb.len < 256) {
 			si->saved->extra_info_type = SMB2_EI_FILENAME;
 			si->saved->extra_info = (gchar *)g_malloc(f_olb.len+1);
 			g_snprintf((gchar *)si->saved->extra_info, f_olb.len+1, "%s", fname);
@@ -9588,13 +9596,13 @@ proto_register_smb2(void)
 			NULL, 0, NULL, HFILL }
 		},
 
-		{ &hf_smb2_getinfo_size,
-			{ "Getinfo Size", "smb2.getinfo_size", FT_UINT32, BASE_DEC,
+		{ &hf_smb2_getinfo_input_size,
+			{ "Getinfo Input Size", "smb2.getinfo_input_size", FT_UINT32, BASE_DEC,
 			NULL, 0, NULL, HFILL }
 		},
 
-		{ &hf_smb2_getinfo_offset,
-			{ "Getinfo Offset", "smb2.getinfo_offset", FT_UINT16, BASE_HEX,
+		{ &hf_smb2_getinfo_input_offset,
+			{ "Getinfo Input Offset", "smb2.getinfo_input_offset", FT_UINT16, BASE_HEX,
 			NULL, 0, NULL, HFILL }
 		},
 

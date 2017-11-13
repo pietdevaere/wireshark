@@ -55,8 +55,8 @@ int add_tagged_field(packet_info *pinfo, proto_tree *tree,
                             guint valid_element_ids_count,
                             association_sanity_check_t *association_sanity_check);
 
-int dissect_wifi_dpp_attributes(packet_info *pinfo, proto_tree *query,
-                                tvbuff_t *tvb, int offset);
+int dissect_wifi_dpp_config_proto(packet_info *pinfo, proto_tree *query,
+                                  tvbuff_t *tvb, int offset);
 #define MAX_SSID_LEN    32
 #define MAX_PROTECT_LEN 10
 
@@ -278,12 +278,12 @@ typedef struct anqp_info_dissector_data {
 } anqp_info_dissector_data_t;
 
 /* WFA vendor specific subtypes */
-#define WFA_SUBTYPE_P2P 9
-#define WFA_SUBTYPE_WIFI_DISPLAY 10
-#define WFA_SUBTYPE_HS20_INDICATION 16
-#define WFA_SUBTYPE_HS20_ANQP 17
-#define WFA_SUBTYPE_DPP 26
-
+#define WFA_SUBTYPE_P2P                9
+#define WFA_SUBTYPE_WIFI_DISPLAY      10
+#define WFA_SUBTYPE_HS20_INDICATION   16
+#define WFA_SUBTYPE_HS20_ANQP         17
+#define WFA_SUBTYPE_DPP               26
+#define WFA_SUBTYPE_IEEE1905_MULTI_AP 27 /* ox1B */
 
 /*
  * Editor modelines

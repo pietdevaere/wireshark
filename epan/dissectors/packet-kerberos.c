@@ -510,10 +510,7 @@ read_keytab_file_from_preferences(void)
 		return;
 	}
 
-	if (last_keytab != NULL) {
-		g_free(last_keytab);
-		last_keytab = NULL;
-	}
+	g_free(last_keytab);
 	last_keytab = g_strdup(keytab_filename);
 
 	read_keytab_file(last_keytab);
@@ -879,9 +876,9 @@ clear_keytab(void) {
 	for(ske = service_key_list; ske != NULL; ske = g_slist_next(ske)){
 		sk = (service_key_t *) ske->data;
 		if (sk) {
-					g_free(sk->contents);
-					g_free(sk);
-				}
+			g_free(sk->contents);
+			g_free(sk);
+		}
 	}
 	g_slist_free(service_key_list);
 	service_key_list = NULL;
@@ -3148,10 +3145,10 @@ dissect_kerberos_KDC_REQ_BODY(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 	 * http://www.ietf.org/internet-drafts/draft-ietf-krb-wg-kerberos-clarifications-07.txt
 	 */
 	if (actx->pinfo->destport == UDP_PORT_KERBEROS && actx->pinfo->ptype == PT_UDP) {
-		conversation = find_conversation(actx->pinfo->num, &actx->pinfo->src, &actx->pinfo->dst, PT_UDP,
+		conversation = find_conversation(actx->pinfo->num, &actx->pinfo->src, &actx->pinfo->dst, ENDPOINT_UDP,
 											actx->pinfo->srcport, 0, NO_PORT_B);
 		if (conversation == NULL) {
-			conversation = conversation_new(actx->pinfo->num, &actx->pinfo->src, &actx->pinfo->dst, PT_UDP,
+			conversation = conversation_new(actx->pinfo->num, &actx->pinfo->src, &actx->pinfo->dst, ENDPOINT_UDP,
 											actx->pinfo->srcport, 0, NO_PORT2);
 			conversation_set_dissector(conversation, kerberos_handle_udp);
 		}
@@ -4211,7 +4208,7 @@ dissect_kerberos_ChangePasswdData(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, 
 
 
 /*--- End of included file: packet-kerberos-fn.c ---*/
-#line 1856 "./asn1/kerberos/packet-kerberos-template.c"
+#line 1853 "./asn1/kerberos/packet-kerberos-template.c"
 
 /* Make wrappers around exported functions for now */
 int
@@ -5265,7 +5262,7 @@ void proto_register_kerberos(void) {
         NULL, HFILL }},
 
 /*--- End of included file: packet-kerberos-hfarr.c ---*/
-#line 2237 "./asn1/kerberos/packet-kerberos-template.c"
+#line 2234 "./asn1/kerberos/packet-kerberos-template.c"
 	};
 
 	/* List of subtrees */
@@ -5343,7 +5340,7 @@ void proto_register_kerberos(void) {
     &ett_kerberos_ChangePasswdData,
 
 /*--- End of included file: packet-kerberos-ettarr.c ---*/
-#line 2253 "./asn1/kerberos/packet-kerberos-template.c"
+#line 2250 "./asn1/kerberos/packet-kerberos-template.c"
 	};
 
 	static ei_register_info ei[] = {

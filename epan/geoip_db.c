@@ -165,13 +165,9 @@ static void geoip_dat_cleanup(void) {
          * databases as they weren't created by GeoIP_new()
          * or GeoIP_open() */
         gi = g_array_index(geoip_dat_arr, GeoIP *, i);
-        if (gi) {
-            g_free(gi);
-        }
+        g_free(gi);
         gi = g_array_index(geoip_dat_arr, GeoIP *, i+1);
-        if (gi) {
-            g_free(gi);
-        }
+        g_free(gi);
         /* finally, free the array itself */
         g_array_free(geoip_dat_arr, TRUE);
         geoip_dat_arr = NULL;
@@ -466,7 +462,7 @@ geoip_db_lookup_latlon6(geoipv6_t addr _U_, float *lat _U_, float *lon _U_) {
 #endif /* NUM_DB_TYPES */
 
 char *
-geoip_db_lookup_ipv6(guint dbnum, struct e_in6_addr addr, const char *not_found) {
+geoip_db_lookup_ipv6(guint dbnum, ws_in6_addr addr, const char *not_found) {
     GeoIP *gi;
     geoipv6_t gaddr;
     char *name;
@@ -564,7 +560,7 @@ geoip_db_lookup_ipv6(guint dbnum, struct e_in6_addr addr, const char *not_found)
 #else /* HAVE_GEOIP_V6 */
 
 char *
-geoip_db_lookup_ipv6(guint dbnum _U_, struct e_in6_addr addr _U_, const char *not_found) {
+geoip_db_lookup_ipv6(guint dbnum _U_, ws_in6_addr addr _U_, const char *not_found) {
     if (not_found == NULL)
         return NULL;
 

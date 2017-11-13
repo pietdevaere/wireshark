@@ -27,6 +27,8 @@
 #include "epan/epan_dissect.h"
 #include "wiretap/wtap.h"
 
+#include <ui/qt/utils/field_information.h>
+
 class ByteViewTab;
 class ProtoTree;
 
@@ -42,14 +44,11 @@ public:
     explicit PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata);
     ~PacketDialog();
 
-signals:
-    void monospaceFontChanged(QFont);
-
 private slots:
-    void captureFileClosing();
-    void setHintText() { QString empty; setHintText(empty); }
-    void setHintText(const QString &hint);
     void on_buttonBox_helpRequested();
+
+    void captureFileClosing();
+    void setHintText(FieldInformation *);
 
 private:
     Ui::PacketDialog *ui;

@@ -46,7 +46,6 @@
 #include "tvbuff.h"
 #include "wmem/wmem.h"
 #include "charsets.h"
-#include "asm_utils.h"
 #include "column-utils.h"
 #include "to_str-int.h"
 #include "to_str.h"
@@ -421,6 +420,18 @@ proto_compare_name(gconstpointer p1_arg, gconstpointer p2_arg)
 	return g_ascii_strcasecmp(p1->short_name, p2->short_name);
 }
 
+static inline guchar
+check_charset(const guint8 table[256], const char *str)
+{
+    const char *p = str;
+    guchar c;
+
+    do {
+      c = *(p++);
+    } while (table[c]);
+    return c;
+}
+
 #ifdef HAVE_PLUGINS
 /*
  * List of dissector plugins.
@@ -525,9 +536,9 @@ proto_init(void (register_all_protocols_func)(register_cb cb, gpointer client_da
 {
 	proto_cleanup_base();
 
-	proto_names        = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, NULL);
-	proto_short_names  = g_hash_table_new(wrs_str_hash, g_str_equal);
-	proto_filter_names = g_hash_table_new(wrs_str_hash, g_str_equal);
+	proto_names        = g_hash_table_new(g_str_hash, g_str_equal);
+	proto_short_names  = g_hash_table_new(g_str_hash, g_str_equal);
+	proto_filter_names = g_hash_table_new(g_str_hash, g_str_equal);
 
 	gpa_hfinfo.len           = 0;
 	gpa_hfinfo.allocated_len = 0;
@@ -3909,7 +3920,7 @@ proto_tree_set_ipv4(field_info *fi, guint32 value)
 /* Add a FT_IPv6 to a proto_tree */
 proto_item *
 proto_tree_add_ipv6(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint start,
-		    gint length, const struct e_in6_addr *value_ptr)
+		    gint length, const ws_in6_addr *value_ptr)
 {
 	proto_item	  *pi;
 	header_field_info *hfinfo;
@@ -3929,7 +3940,7 @@ proto_tree_add_ipv6(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint start,
 proto_item *
 proto_tree_add_ipv6_format_value(proto_tree *tree, int hfindex, tvbuff_t *tvb,
 				 gint start, gint length,
-				 const struct e_in6_addr *value_ptr,
+				 const ws_in6_addr *value_ptr,
 				 const char *format, ...)
 {
 	proto_item	  *pi;
@@ -3948,7 +3959,7 @@ proto_tree_add_ipv6_format_value(proto_tree *tree, int hfindex, tvbuff_t *tvb,
 proto_item *
 proto_tree_add_ipv6_format(proto_tree *tree, int hfindex, tvbuff_t *tvb,
 			   gint start, gint length,
-			   const struct e_in6_addr *value_ptr,
+			   const ws_in6_addr *value_ptr,
 			   const char *format, ...)
 {
 	proto_item	  *pi;
@@ -5622,10 +5633,9 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 	guint32             number;
 	guint64             number64;
 	guint8             *bytes;
-	ipv4_addr_and_mask *ipv4;
-	struct e_in6_addr  *ipv6;
+	guint32             ipv4;
+	ws_in6_addr        *ipv6;
 	address             addr;
-	guint32             n_addr; /* network-order IPv4 address */
 
 	const true_false_string  *tfstring;
 
@@ -5797,7 +5807,7 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 						hf_str_val = NULL;
 						number = fvalue_get_uinteger(&finfo->value);
 
-						if ((hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_CUSTOM) {
+						if (FIELD_DISPLAY(hfinfo->display) == BASE_CUSTOM) {
 							gchar tmp[ITEM_LABEL_LENGTH];
 							custom_fmt_func_t fmtfunc = (custom_fmt_func_t)hfinfo->strings;
 
@@ -5820,7 +5830,7 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 							offset_r += protoo_strlcpy(result+offset_r, number_out, size-offset_r);
 						}
 
-						if (hf_str_val && (hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_NONE) {
+						if (hf_str_val && FIELD_DISPLAY(hfinfo->display) == BASE_NONE) {
 							g_snprintf(expr+offset_e, size-offset_e, "\"%s\"", hf_str_val);
 						} else {
 							number_out = hfinfo_char_value_format(hfinfo, number_buf, number);
@@ -5846,7 +5856,7 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 							(guint32) fvalue_get_sinteger(&finfo->value) :
 							fvalue_get_uinteger(&finfo->value);
 
-						if ((hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_CUSTOM) {
+						if (FIELD_DISPLAY(hfinfo->display) == BASE_CUSTOM) {
 							gchar tmp[ITEM_LABEL_LENGTH];
 							custom_fmt_func_t fmtfunc = (custom_fmt_func_t)hfinfo->strings;
 
@@ -5875,7 +5885,7 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 							offset_r += protoo_strlcpy(result+offset_r, number_out, size-offset_r);
 						}
 
-						if (hf_str_val && (hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_NONE) {
+						if (hf_str_val && FIELD_DISPLAY(hfinfo->display) == BASE_NONE) {
 							g_snprintf(expr+offset_e, size-offset_e, "\"%s\"", hf_str_val);
 						} else {
 							number_out = hfinfo_numeric_value_format(hfinfo, number_buf, number);
@@ -5899,7 +5909,7 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 							(guint64) fvalue_get_sinteger64(&finfo->value) :
 							fvalue_get_uinteger64(&finfo->value);
 
-						if ((hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_CUSTOM) {
+						if (FIELD_DISPLAY(hfinfo->display) == BASE_CUSTOM) {
 							gchar tmp[ITEM_LABEL_LENGTH];
 							custom_fmt_func_64_t fmtfunc64 = (custom_fmt_func_64_t)hfinfo->strings;
 
@@ -5926,7 +5936,7 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 							offset_r += protoo_strlcpy(result+offset_r, number_out, size-offset_r);
 						}
 
-						if (hf_str_val && (hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_NONE) {
+						if (hf_str_val && FIELD_DISPLAY(hfinfo->display) == BASE_NONE) {
 							g_snprintf(expr+offset_e, size-offset_e, "\"%s\"", hf_str_val);
 						} else {
 							number_out = hfinfo_numeric_value_format64(hfinfo, number_buf, number64);
@@ -5944,16 +5954,15 @@ proto_custom_set(proto_tree* tree, GSList *field_ids, gint occurrence,
 						break;
 
 					case FT_IPv4:
-						ipv4 = (ipv4_addr_and_mask *)fvalue_get(&finfo->value);
-						n_addr = ipv4_get_net_order_addr(ipv4);
-						set_address (&addr, AT_IPv4, 4, &n_addr);
+						ipv4 = fvalue_get_uinteger(&finfo->value);
+						set_address (&addr, AT_IPv4, 4, &ipv4);
 						address_to_str_buf(&addr, result+offset_r, size-offset_r);
 						offset_r = (int)strlen(result);
 						break;
 
 					case FT_IPv6:
-						ipv6 = (struct e_in6_addr *)fvalue_get(&finfo->value);
-						set_address (&addr, AT_IPv6, sizeof(struct e_in6_addr), ipv6);
+						ipv6 = (ws_in6_addr *)fvalue_get(&finfo->value);
+						set_address (&addr, AT_IPv6, sizeof(ws_in6_addr), ipv6);
 						address_to_str_buf(&addr, result+offset_r, size-offset_r);
 						offset_r = (int)strlen(result);
 						break;
@@ -6219,16 +6228,22 @@ proto_item_prepend_text(proto_item *pi, const char *format, ...)
 static void
 finfo_set_len(field_info *fi, const gint length)
 {
+	gint length_remaining;
+
 	DISSECTOR_ASSERT(length >= 0);
-	fi->length = length;
+	length_remaining = tvb_captured_length_remaining(fi->ds_tvb, fi->start);
+	if (length > length_remaining)
+		fi->length = length_remaining;
+	else
+		fi->length = length;
 
 	/*
 	 * You cannot just make the "len" field of a GByteArray
 	 * larger, if there's no data to back that length;
 	 * you can only make it smaller.
 	 */
-	if (fi->value.ftype->ftype == FT_BYTES && length <= (gint)fi->value.value.bytes->len)
-		fi->value.value.bytes->len = length;
+	if (fi->value.ftype->ftype == FT_BYTES && fi->length <= (gint)fi->value.value.bytes->len)
+		fi->value.value.bytes->len = fi->length;
 }
 
 void
@@ -6500,8 +6515,6 @@ proto_register_protocol(const char *name, const char *short_name,
 	const protocol_t *existing_protocol = NULL;
 	header_field_info *hfinfo;
 	int proto_id;
-	const char *existing_name;
-	gint *key;
 	guint i;
 	gchar c;
 	gboolean found_invalid;
@@ -6512,26 +6525,14 @@ proto_register_protocol(const char *name, const char *short_name,
 	 * or an inappropriate plugin.
 	 * This situation has to be fixed to not register more than one
 	 * protocol with the same name.
-	 *
-	 * This is done by reducing the number of strcmp (and alike) calls
-	 * as much as possible, as this significally slows down startup time.
-	 *
-	 * Drawback: As a hash value is used to reduce insert time,
-	 * this might lead to a hash collision.
-	 * However, although we have somewhat over 1000 protocols, we're using
-	 * a 32 bit int so this is very, very unlikely.
 	 */
 
-	key  = (gint *)g_malloc (sizeof(gint));
-	*key = wrs_str_hash(name);
-
-	existing_name = (const char *)g_hash_table_lookup(proto_names, key);
-	if (existing_name != NULL) {
+	existing_protocol = (const protocol_t *)g_hash_table_lookup(proto_names, name);
+	if (existing_protocol != NULL) {
 		/* g_error will terminate the program */
 		g_error("Duplicate protocol name \"%s\"!"
 			" This might be caused by an inappropriate plugin or a development error.", name);
 	}
-	g_hash_table_insert(proto_names, key, (gpointer)name);
 
 	existing_protocol = (const protocol_t *)g_hash_table_lookup(proto_short_names, short_name);
 	if (existing_protocol != NULL) {
@@ -6573,6 +6574,7 @@ proto_register_protocol(const char *name, const char *short_name,
 	protocol->heur_list = NULL;
 	/* list will be sorted later by name, when all protocols completed registering */
 	protocols = g_list_prepend(protocols, protocol);
+	g_hash_table_insert(proto_names, (gpointer)name, protocol);
 	g_hash_table_insert(proto_filter_names, (gpointer)filter_name, protocol);
 	g_hash_table_insert(proto_short_names, (gpointer)short_name, protocol);
 
@@ -6670,7 +6672,6 @@ proto_deregister_protocol(const char *short_name)
 	protocol_t *protocol;
 	header_field_info *hfinfo;
 	int proto_id;
-	gint key;
 	guint i;
 
 	proto_id = proto_get_id_by_short_name(short_name);
@@ -6678,9 +6679,7 @@ proto_deregister_protocol(const char *short_name)
 	if (protocol == NULL)
 		return FALSE;
 
-	key = wrs_str_hash(protocol->name);
-	g_hash_table_remove(proto_names, &key);
-
+	g_hash_table_remove(proto_names, protocol->name);
 	g_hash_table_remove(proto_short_names, (gpointer)short_name);
 	g_hash_table_remove(proto_filter_names, (gpointer)protocol->filter_name);
 
@@ -6807,12 +6806,9 @@ proto_get_id(const protocol_t *protocol)
 gboolean
 proto_name_already_registered(const gchar *name)
 {
-	gint key;
-
 	DISSECTOR_ASSERT_HINT(name, "No name present");
 
-	key = wrs_str_hash(name);
-	if (g_hash_table_lookup(proto_names, &key) != NULL)
+	if (g_hash_table_lookup(proto_names, name) != NULL)
 		return TRUE;
 	return FALSE;
 }
@@ -7339,6 +7335,7 @@ static const value_string hf_display[] = {
 	{ BASE_PT_TCP,			  "BASE_PT_TCP"			   },
 	{ BASE_PT_DCCP,			  "BASE_PT_DCCP"		   },
 	{ BASE_PT_SCTP,			  "BASE_PT_SCTP"		   },
+	{ BASE_OUI,			  "BASE_OUI"			   },
 	{ 0,				  NULL } };
 
 const char* proto_field_display_to_string(int field_display)
@@ -7440,7 +7437,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 	   report those that have same value but different string. */
 	if ((hfinfo->strings != NULL) &&
 	    !(hfinfo->display & BASE_RANGE_STRING) &&
-	    !((hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_CUSTOM) &&
+	    !(FIELD_DISPLAY(hfinfo->display) == BASE_CUSTOM) &&
 	    (
 		    (hfinfo->type == FT_CHAR)  ||
 		    (hfinfo->type == FT_UINT8)  ||
@@ -7538,7 +7535,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 			 *	signed field to be displayed unsigned.  (Else how would
 			 *	we display negative values?)
 			 */
-			switch (hfinfo->display & FIELD_DISPLAY_E_MASK) {
+			switch (FIELD_DISPLAY(hfinfo->display)) {
 				case BASE_HEX:
 				case BASE_OCT:
 				case BASE_DEC_HEX:
@@ -7579,6 +7576,27 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 				break;
 			}
 
+			if (hfinfo->display == BASE_OUI) {
+				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+				if (hfinfo->type != FT_UINT24) {
+					g_error("Field '%s' (%s) has 'display' value %s but it can only be used with FT_UINT24, not %s\n",
+						hfinfo->name, hfinfo->abbrev,
+						tmp_str, ftype_name(hfinfo->type));
+				}
+				if (hfinfo->strings != NULL) {
+					g_error("Field '%s' (%s) is an %s (%s) but has a strings value\n",
+						hfinfo->name, hfinfo->abbrev,
+						ftype_name(hfinfo->type), tmp_str);
+				}
+				if (hfinfo->bitmask != 0) {
+					g_error("Field '%s' (%s) is an %s (%s) but has a bitmask\n",
+						hfinfo->name, hfinfo->abbrev,
+						ftype_name(hfinfo->type), tmp_str);
+				}
+				wmem_free(NULL, tmp_str);
+				break;
+			}
+
 			/*  Require integral types (other than frame number,
 			 *  which is always displayed in decimal) to have a
 			 *  number base.
@@ -7589,7 +7607,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 			 *  meaningless; we'll avoid showing the value to the
 			 *  user.
 			 */
-			switch (hfinfo->display & FIELD_DISPLAY_E_MASK) {
+			switch (FIELD_DISPLAY(hfinfo->display)) {
 				case BASE_DEC:
 				case BASE_HEX:
 				case BASE_OCT:
@@ -7870,7 +7888,7 @@ register_number_string_decoding_error(void)
 	proto_set_cant_toggle(proto_number_string_decoding_error);
 }
 
-#define PROTO_PRE_ALLOC_HF_FIELDS_MEM (188000+PRE_ALLOC_EXPERT_FIELDS_MEM)
+#define PROTO_PRE_ALLOC_HF_FIELDS_MEM (190000+PRE_ALLOC_EXPERT_FIELDS_MEM)
 static int
 proto_register_field_init(header_field_info *hfinfo, const int parent)
 {
@@ -7905,7 +7923,7 @@ proto_register_field_init(header_field_info *hfinfo, const int parent)
 
 		/* Check that the filter name (abbreviation) is legal;
 		 * it must contain only alphanumerics, '-', "_", and ".". */
-		c = wrs_check_charset(fld_abbrev_chars, hfinfo->abbrev);
+		c = check_charset(fld_abbrev_chars, hfinfo->abbrev);
 		if (c) {
 			if (g_ascii_isprint(c))
 				fprintf(stderr, "Invalid character '%c' in filter name '%s'\n", c, hfinfo->abbrev);
@@ -8102,9 +8120,8 @@ proto_item_fill_label(field_info *fi, gchar *label_str)
 	guint8		   *bytes;
 	guint32		    integer;
 	guint64		    integer64;
-	ipv4_addr_and_mask *ipv4;
+	guint32             ipv4;
 	e_guid_t	   *guid;
-	guint32		    n_addr; /* network-order IPv4 address */
 	gchar		   *name;
 	address		    addr;
 	char		   *addr_str;
@@ -8337,12 +8354,11 @@ proto_item_fill_label(field_info *fi, gchar *label_str)
 			break;
 
 		case FT_IPv4:
-			ipv4 = (ipv4_addr_and_mask *)fvalue_get(&fi->value);
-			n_addr = ipv4_get_net_order_addr(ipv4);
+			ipv4 = fvalue_get_uinteger(&fi->value);
 
 			addr.type = AT_IPv4;
 			addr.len  = 4;
-			addr.data = &n_addr;
+			addr.data = &ipv4;
 
 			if (hfinfo->display == BASE_NETMASK)
 			{
@@ -9118,7 +9134,7 @@ hfinfo_char_value_format_display(int display, char buf[7], guint32 value)
 			break;
 
 		default:
-			switch (display & FIELD_DISPLAY_E_MASK) {
+			switch (FIELD_DISPLAY(display)) {
 
 			case BASE_OCT:
 				*(--ptr) = (value & 0x7) + '0';
@@ -9153,7 +9169,7 @@ hfinfo_number_value_format_display(const header_field_info *hfinfo, int display,
 
 	*ptr = '\0';
 	/* Properly format value */
-	switch (display & FIELD_DISPLAY_E_MASK) {
+	switch (FIELD_DISPLAY(display)) {
 		case BASE_DEC:
 			return isint ? int_to_str_back(ptr, (gint32) value) : uint_to_str_back(ptr, value);
 
@@ -9186,6 +9202,27 @@ hfinfo_number_value_format_display(const header_field_info *hfinfo, int display,
 			port_with_resolution_to_str_buf(buf, 32,
 					display_to_port_type((field_display_e)display), value);
 			return buf;
+		case BASE_OUI:
+			{
+			guint8 p_oui[3];
+			const gchar *manuf_name;
+
+			p_oui[0] = value >> 16 & 0xFF;
+			p_oui[1] = value >> 8 & 0xFF;
+			p_oui[2] = value & 0xFF;
+
+			/* Attempt an OUI lookup. */
+			manuf_name = uint_get_manuf_name_if_known(value);
+			if (manuf_name == NULL) {
+				/* Could not find an OUI. */
+				g_snprintf(buf, 32, "%02x:%02x:%02x", p_oui[0], p_oui[1], p_oui[2]);
+			}
+			else {
+				/* Found an address string. */
+				g_snprintf(buf, 32, "%02x:%02x:%02x (%s)", p_oui[0], p_oui[1], p_oui[2], manuf_name);
+			}
+			return buf;
+			}
 
 		default:
 			g_assert_not_reached();
@@ -9201,7 +9238,7 @@ hfinfo_number_value_format_display64(const header_field_info *hfinfo, int displa
 
 	*ptr = '\0';
 	/* Properly format value */
-		switch (display) {
+		switch (FIELD_DISPLAY(display)) {
 			case BASE_DEC:
 				return isint ? int64_to_str_back(ptr, (gint64) value) : uint64_to_str_back(ptr, value);
 
@@ -9267,7 +9304,7 @@ static const char *
 hfinfo_char_value_format(const header_field_info *hfinfo, char buf[32], guint32 value)
 {
 	/* Get the underlying BASE_ value */
-	int display = hfinfo->display & FIELD_DISPLAY_E_MASK;
+	int display = FIELD_DISPLAY(hfinfo->display);
 
 	return hfinfo_char_value_format_display(display, buf, value);
 }
@@ -9276,7 +9313,7 @@ static const char *
 hfinfo_numeric_value_format(const header_field_info *hfinfo, char buf[32], guint32 value)
 {
 	/* Get the underlying BASE_ value */
-	int display = hfinfo->display & FIELD_DISPLAY_E_MASK;
+	int display = FIELD_DISPLAY(hfinfo->display);
 
 	if (hfinfo->type == FT_FRAMENUM) {
 		/*
@@ -9287,6 +9324,8 @@ hfinfo_numeric_value_format(const header_field_info *hfinfo, char buf[32], guint
 
 	if (IS_BASE_PORT(display)) {
 		display = BASE_DEC;
+	} else if (display == BASE_OUI) {
+		display = BASE_HEX;
 	}
 
 	switch (display) {
@@ -9311,7 +9350,7 @@ static const char *
 hfinfo_numeric_value_format64(const header_field_info *hfinfo, char buf[64], guint64 value)
 {
 	/* Get the underlying BASE_ value */
-	int display = hfinfo->display & FIELD_DISPLAY_E_MASK;
+	int display = FIELD_DISPLAY(hfinfo->display);
 
 	if (hfinfo->type == FT_FRAMENUM) {
 		/*
@@ -9342,7 +9381,7 @@ static const char *
 hfinfo_char_vals_format(const header_field_info *hfinfo, char buf[32], guint32 value)
 {
 	/* Get the underlying BASE_ value */
-	int display = hfinfo->display & FIELD_DISPLAY_E_MASK;
+	int display = FIELD_DISPLAY(hfinfo->display);
 
 	return hfinfo_char_value_format_display(display, buf, value);
 }
@@ -9351,7 +9390,7 @@ static const char *
 hfinfo_number_vals_format(const header_field_info *hfinfo, char buf[32], guint32 value)
 {
 	/* Get the underlying BASE_ value */
-	int display = hfinfo->display & FIELD_DISPLAY_E_MASK;
+	int display = FIELD_DISPLAY(hfinfo->display);
 
 	if (display == BASE_NONE)
 		return NULL;
@@ -9368,7 +9407,7 @@ static const char *
 hfinfo_number_vals_format64(const header_field_info *hfinfo, char buf[64], guint64 value)
 {
 	/* Get the underlying BASE_ value */
-	int display = hfinfo->display & FIELD_DISPLAY_E_MASK;
+	int display = FIELD_DISPLAY(hfinfo->display);
 
 	if (display == BASE_NONE)
 		return NULL;
@@ -9637,21 +9676,25 @@ proto_find_field_from_offset(proto_tree *tree, guint offset, tvbuff_t *tvb)
 	return offsearch.finfo;
 }
 
+typedef struct {
+	gint length;
+	gchar *buf;
+} decoded_data_t;
 
 static gboolean
 check_for_undecoded(proto_node *node, gpointer data)
 {
 	field_info *fi = PNODE_FINFO(node);
-	gchar* decoded = (gchar*)data;
+	decoded_data_t* decoded = (decoded_data_t*)data;
 	gint i;
 	guint byte;
 	guint bit;
 
 	if (fi && fi->hfinfo->type != FT_PROTOCOL) {
-		for (i = fi->start; i < fi->start + fi->length; i++) {
+		for (i = fi->start; i < fi->start + fi->length && i < decoded->length; i++) {
 			byte = i / 8;
 			bit = i % 8;
-			decoded[byte] |= (1 << bit);
+			decoded->buf[byte] |= (1 << bit);
 		}
 	}
 
@@ -9661,10 +9704,12 @@ check_for_undecoded(proto_node *node, gpointer data)
 gchar*
 proto_find_undecoded_data(proto_tree *tree, guint length)
 {
-	gchar* decoded = (gchar*)wmem_alloc0(wmem_packet_scope(), length / 8 + 1);
+	decoded_data_t decoded;
+	decoded.length = length;
+	decoded.buf = (gchar*)wmem_alloc0(wmem_packet_scope(), length / 8 + 1);
 
-	proto_tree_traverse_pre_order(tree, check_for_undecoded, decoded);
-	return decoded;
+	proto_tree_traverse_pre_order(tree, check_for_undecoded, &decoded);
+	return decoded.buf;
 }
 
 /* Dumps the protocols in the registration database to stdout.	An independent
@@ -9785,7 +9830,7 @@ proto_registrar_dump_values(void)
 		units  = NULL;
 
 		if (hfinfo->strings != NULL) {
-			if ((hfinfo->display & FIELD_DISPLAY_E_MASK) != BASE_CUSTOM &&
+			if (FIELD_DISPLAY(hfinfo->display) != BASE_CUSTOM &&
 			    (hfinfo->type == FT_CHAR  ||
 			     hfinfo->type == FT_UINT8  ||
 			     hfinfo->type == FT_UINT16 ||
@@ -9892,7 +9937,7 @@ proto_registrar_dump_values(void)
 			vi = 0;
 			while (range[vi].strptr) {
 				/* Print in the proper base */
-				if ((hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_HEX) {
+				if (FIELD_DISPLAY(hfinfo->display) == BASE_HEX) {
 					ws_debug_printf("R\t%s\t0x%x\t0x%x\t%s\n",
 					       hfinfo->abbrev,
 					       range[vi].value_min,
@@ -10079,6 +10124,7 @@ proto_registrar_dump_fields(void)
 					case BASE_PT_TCP:
 					case BASE_PT_DCCP:
 					case BASE_PT_SCTP:
+					case BASE_OUI:
 						base_name = val_to_str_const(FIELD_DISPLAY(hfinfo->display), hf_display, "????");
 						break;
 					default:
@@ -10152,7 +10198,7 @@ construct_match_selected_string(field_info *finfo, epan_dissect_t *edt,
 	DISSECTOR_ASSERT(hfinfo);
 	abbrev_len = (int) strlen(hfinfo->abbrev);
 
-	if (hfinfo->strings && (hfinfo->display & FIELD_DISPLAY_E_MASK) == BASE_NONE) {
+	if (hfinfo->strings && FIELD_DISPLAY(hfinfo->display) == BASE_NONE) {
 		const gchar *str = NULL;
 
 		switch (hfinfo->type) {
@@ -11838,7 +11884,7 @@ proto_tree_add_checksum(proto_tree *tree, tvbuff_t *tvb, const guint offset,
 guchar
 proto_check_field_name(const gchar *field_name)
 {
-	return wrs_check_charset(fld_abbrev_chars, field_name);
+	return check_charset(fld_abbrev_chars, field_name);
 }
 
 gboolean

@@ -24,25 +24,17 @@
 include $(top_srcdir)/Makefile.am.inc
 
 if HAVE_LIBLUA
-wslua_lib = wslua/libwslua.la
 wslua_dir = wslua
-wslua_dist_dir =
-else		# HAVE_LIBLUA
-wslua_lib =
-wslua_dir =
-wslua_dist_dir = wslua
-endif		# HAVE_LIBLUA
+endif
 
-SUBDIRS = compress crypt ftypes dfilter dissectors wmem $(wslua_dir)
-
-DIST_SUBDIRS = $(SUBDIRS) $(wslua_dist_dir)
+SUBDIRS = crypt ftypes dfilter dissectors wmem $(wslua_dir)
 
 AM_CPPFLAGS = $(INCLUDEDIRS) -I$(builddir)/wslua $(WS_CPPFLAGS) \
 	$(GLIB_CFLAGS) $(PCAP_CFLAGS) $(LUA_CFLAGS) $(LIBGNUTLS_CFLAGS) \
 	$(LIBGCRYPT_CFLAGS) $(LIBSMI_CFLAGS) $(LIBGEOIP_CFLAGS) \
 	$(LZ4_CFLAGS) $(KRB5_CFLAGS) $(SNAPPY_CFLAGS) $(LIBXML2_CFLAGS)
 
-noinst_LTLIBRARIES = libwireshark_generated.la libwireshark_asmopt.la
+noinst_LTLIBRARIES = libwireshark_generated.la
 lib_LTLIBRARIES = libwireshark.la
 
 LIBWIRESHARK_SRC = \
@@ -55,7 +47,6 @@ LIBWIRESHARK_SRC = \
 	asn1.c			\
 	capture_dissectors.c	\
 	charsets.c		\
-	circuit.c		\
 	color_filters.c		\
 	column.c		\
 	column-utils.c		\
@@ -89,12 +80,10 @@ LIBWIRESHARK_SRC = \
 	iana_charsets.c		\
 	in_cksum.c		\
 	ipproto.c		\
-	ipv4.c			\
 	media_params.c		\
 	next_tvb.c		\
 	oids.c			\
 	osi-utils.c		\
-	oui.c			\
 	packet.c		\
 	prefs.c			\
 	print.c			\
@@ -187,7 +176,6 @@ LIBWIRESHARK_INCLUDES_PUBLIC = \
 	capture_dissectors.h	\
 	charsets.h		\
 	chdlctypes.h		\
-	circuit.h		\
 	color_filters.h		\
 	column.h		\
 	column-info.h		\
@@ -315,12 +303,15 @@ libwireshark_la_CPPFLAGS = $(AM_CPPFLAGS) -DWS_BUILD_DLL
 # http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 libwireshark_la_LDFLAGS = -version-info 0:0:0 @LDFLAGS_BIGSHAREDLIB@ @LDFLAGS_SHAREDLIB@
 
+if HAVE_LIBLUA
+wslua_lib = wslua/libwslua.la
+endif
+
 #
 # Add the object files for missing routines, if any.
 #
 libwireshark_la_LIBADD = \
 	libwireshark_generated.la		\
-	libwireshark_asmopt.la			\
 	crypt/libairpdcap.la			\
 	ftypes/libftypes.la			\
 	dfilter/libdfilter.la			\
@@ -336,18 +327,15 @@ libwireshark_la_LIBADD = \
 	@KRB5_LIBS@		\
 	@LIBGCRYPT_LIBS@	\
 	@LIBGNUTLS_LIBS@	\
-	@LIBSMI_LDFLAGS@	\
+	@LIBSMI_LIBS@	\
 	@LZ4_LIBS@		\
 	@NGHTTP2_LIBS@		\
-	@SSL_LIBS@		\
 	@SNAPPY_LIBS@		\
 	@LIBXML2_LIBS@		\
 	@GLIB_LIBS@
 
 libwireshark_la_DEPENDENCIES = \
 	libwireshark_generated.la		\
-	compress/liblzxpress.la			\
-	libwireshark_asmopt.la			\
 	crypt/libairpdcap.la			\
 	ftypes/libftypes.la			\
 	dfilter/libdfilter.la			\
@@ -368,13 +356,6 @@ nodist_libwireshark_generated_la_SOURCES = \
 
 libwireshark_generated_la_CFLAGS = $(GENERATED_CFLAGS)
 
-# code optionally implemented in assembler
-# only C source available for platforms other than Win32
-libwireshark_asmopt_la_SOURCES = \
-	asm_utils.c		\
-	asm_utils.h		\
-	asm_utils_win32_x86.asm
-
 EXTRA_DIST = \
 	.editorconfig		\
 	diam_dict.l		\
@@ -394,8 +375,6 @@ CLEANFILES = \
 	libwireshark.la			\
 	libwireshark_generated.a	\
 	libwireshark_generated.la	\
-	libwireshark_asmopt.a		\
-	libwireshark_asmopt.la		\
 	*~
 
 DISTCLEANFILES = \
@@ -406,8 +385,7 @@ DISTCLEANFILES = \
 
 MAINTAINERCLEANFILES = \
 	$(LIBWIRESHARK_GENERATED_C_FILES) \
-	$(LIBWIRESHARK_GENERATED_HEADER_FILES) \
-	Makefile.in
+	$(LIBWIRESHARK_GENERATED_HEADER_FILES)
 
 BUILT_SOURCES = \
 	$(LIBWIRESHARK_GENERATED_HEADER_FILES) \
@@ -453,7 +431,7 @@ dtd_grammar.c : $(LEMON) $(lemon_srcdir)/lempar.c $(srcdir)/dtd_grammar.lemon
 	$(AM_V_LEMON)$(LEMON) T=$(lemon_srcdir)/lempar.c $(srcdir)/dtd_grammar.lemon
 
 version_info.c: $(top_srcdir)/version_info.c
-	$(AM_V_LN_S)$(LN_S) $<
+	$(AM_V_LN_S)$(LN_S) $< $(builddir)
 
 tvbtest.o exntest.o oids_test.o: exceptions.h
 
@@ -594,48 +572,6 @@ wsar_html: doxygen.cfg ../doxygen_global.cfg
 if HAVE_DOXYGEN
 	(umask 022 ; $(DOXYGEN) doxygen.cfg)
 endif
-
-# ABI compliance checker can be obtained from
-# http://ispras.linux-foundation.org/index.php/ABI_compliance_checker
-# Checked using version 1.21.12
-# TODO: fix wrong headers and select ones providing external API
-dumpabi-libwireshark: all abi-descriptor.xml
-	rm -rf abi-check-headers abi_dumps .libs/*.abi.tar.gz
-	mkdir abi-check-headers
-	cp ../config.h ../register.h abi-check-headers/
-	mkdir abi-check-headers/epan
-	cp *.h abi-check-headers/epan
-	mkdir abi-check-headers/crypt
-	cp crypt/*.h abi-check-headers/crypt
-	mkdir abi-check-headers/compress
-	cp compress/*.h abi-check-headers/compress
-	mkdir abi-check-headers/dfilter
-	cp dfilter/*.h ../tools/lemon/cppmagic.h abi-check-headers/dfilter
-	mkdir abi-check-headers/dissectors
-	cp dissectors/*.h abi-check-headers/dissectors
-	rm \
-		abi-check-headers/*/*_lex.h \
-		abi-check-headers/dissectors/x11-extension-implementation.h \
-		abi-check-headers/dissectors/x11-glx-render-enum.h \
-		abi-check-headers/dissectors/x11-register-info.h \
-		abi-check-headers/dissectors/packet-lb* \
-		abi-check-headers/dissectors/packet-idmp.h
-	mkdir abi-check-headers/ftypes
-	cp ftypes/*.h abi-check-headers/ftypes
-	mkdir abi-check-headers/wmem
-	cp wmem/*.h abi-check-headers/wmem
-	abi-compliance-checker -log-path abi_logs/log.txt -l libwireshark -v1 `readlink .libs/libwireshark.so | sed 's/.*\.so\.//'` \
-		-relpath $(abs_srcdir) -dump-abi abi-descriptor.xml || \
-		cat abi_logs/log.txt
-	cp -f abi_dumps/libwireshark/libwireshark_* .libs/
-	cd .libs && ln -sf libwireshark_*.abi.tar.gz libwireshark.abi.tar.gz
-
-maintainer-clean-local: clean-dumpabi-libwireshark
-
-.PHONY: clean-dumpabi-libwireshark
-
-clean-dumpabi-libwireshark:
-	rm -rf abi-check-headers abi_dumps .libs/*.abi.tar.gz abi_logs abi-descriptor.xml
 
 checkapi:
 	$(AM_V_GEN)$(PERL) $(top_srcdir)/tools/checkAPIs.pl -g termoutput -build \

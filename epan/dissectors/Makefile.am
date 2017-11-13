@@ -27,22 +27,20 @@ AM_CPPFLAGS = $(INCLUDEDIRS) -I$(top_srcdir)/epan $(WS_CPPFLAGS) \
 include Custom.common
 
 # "BUILT_SOURCES" are built before any "make all" or "make check" targets.
-BUILT_C_FILES = \
+BUILT_SOURCES = \
 	register.c
 
-BUILT_SOURCES = $(BUILT_C_FILES) $(BUILT_HEADER_FILES)
-
 # Header files generated from source files.
-GENERATED_HEADER_FILES = \
-	$(BUILT_HEADER_FILES)
+NODIST_GENERATED_HEADER_FILES =
 
 # C source files generated from source files.
-GENERATED_C_FILES = \
-	$(BUILT_C_FILES)	\
-	packet-ncp2222.c
+NODIST_GENERATED_C_FILES = \
+	register.c
 
 # All the generated files.
-GENERATED_FILES = $(GENERATED_HEADER_FILES) $(GENERATED_C_FILES)
+NODIST_GENERATED_FILES = \
+	$(NODIST_GENERATED_HEADER_FILES)	\
+	$(NODIST_GENERATED_C_FILES)
 
 #
 # PIDL-generated DCE RPC dissectors without warnings.
@@ -362,6 +360,7 @@ DISSECTOR_SRC = \
 	packet-btle.c		\
 	packet-btle_rf.c	\
 	packet-btmcap.c		\
+	packet-btmesh.c		\
 	packet-btrfcomm.c	\
 	packet-btsap.c		\
 	packet-btsdp.c		\
@@ -614,6 +613,7 @@ DISSECTOR_SRC = \
 	packet-forces.c		\
 	packet-foundry.c	\
 	packet-fp_hint.c	\
+	packet-fp_mux.c	    \
 	packet-fr.c		\
 	packet-fractalgeneratorprotocol.c	\
 	packet-frame.c		\
@@ -740,6 +740,7 @@ DISSECTOR_SRC = \
 	packet-iec104.c		\
 	packet-ieee1722.c	\
 	packet-ieee17221.c	\
+	packet-ieee1905.c	\
 	packet-ieee80211-netmon.c	\
 	packet-ieee80211-prism.c	\
 	packet-ieee80211-radio.c	\
@@ -1034,6 +1035,7 @@ DISSECTOR_SRC = \
 	packet-nvme-rdma.c	\
 	packet-nwmtp.c		\
 	packet-nwp.c		\
+	packet-nfapi.c		\
 	packet-oampdu.c		\
 	packet-obd-ii.c		\
 	packet-obex.c		\
@@ -1105,7 +1107,7 @@ DISSECTOR_SRC = \
 	packet-ppp.c		\
 	packet-pppoe.c		\
 	packet-pptp.c		\
-	packet-protobuf.c   	\
+	packet-protobuf.c	\
 	packet-prp.c		\
 	packet-ptp.c		\
 	packet-ptpip.c		\
@@ -1326,6 +1328,7 @@ DISSECTOR_SRC = \
 	packet-turbocell.c	\
 	packet-turnchannel.c	\
 	packet-tuxedo.c		\
+	packet-twamp.c		\
 	packet-tzsp.c		\
 	packet-u3v.c		\
 	packet-ua.c		\
@@ -1399,6 +1402,7 @@ DISSECTOR_SRC = \
 	packet-wifi-p2p.c	\
 	packet-windows-common.c	\
 	packet-winsrepl.c	\
+	packet-wisun.c		\
 	packet-wlccp.c		\
 	packet-wol.c		\
 	packet-wow.c		\
@@ -1845,7 +1849,6 @@ DISSECTOR_INCLUDES = \
 	packet-ziop.h		\
 	read_keytab_file.h	\
 	snort-config.h		\
-	$(GENERATED_HEADER_FILES)	\
 	$(CUSTOM_HEADER_FILES)
 
 # Dissector helpers.  They're included in the source files in this
@@ -1855,8 +1858,7 @@ DISSECTOR_SUPPORT_SRC =	\
 	errno.c			\
 	packet-dcerpc-nt.c	\
 	snort-config.c		\
-	usb.c			\
-	register.c
+	usb.c
 
 ALL_DISSECTORS_SRC = \
 	$(DISSECTOR_SRC)		\
@@ -1884,6 +1886,9 @@ libdissectors_la_SOURCES = \
 	$(CORBA_IDL_DISSECTOR_SRC) \
 	$(PIDL_DISSECTOR_SRC) \
 	$(DISSECTOR_SUPPORT_SRC)
+
+nodist_libdissectors_la_SOURCES = \
+	$(NODIST_GENERATED_C_FILES)
 
 subpkgincludedir = $(pkgincludedir)/epan/dissectors
 
@@ -1951,26 +1956,7 @@ register.c: $(plugin_src) $(ALL_DISSECTORS_SRC) Custom.common \
 	@echo Making register.c ; \
 	$(PYTHON) $(top_srcdir)/tools/make-dissector-reg.py $(srcdir) \
 		dissectors $(ALL_DISSECTORS_SRC) ;
-#
-# Currently register.c can be included in the distribution because
-# we always build all protocol dissectors. We used to have to check
-# whether or not to build the snmp dissector. If we again need to
-# variably build something, making register.c non-portable, uncomment
-# the dist-hook line below.
-#
-# Oh, yuk. We don't want to include "register.c" in the distribution, as
-# its contents depend on the configuration, and therefore we want it
-# to be built when the first "make" is done; however, Automake insists
-# on putting *all* source into the distribution.
-#
-# We work around this by having a "dist-hook" rule that deletes
-# "register.c", so that "dist" won't pick it up.
-#
-#dist-hook:
-#	@rm -f $(distdir)/register.c
 
-# XXX - We may want to add register-cache.pkl to the distribution at
-# some point. It should be portable across architectures.
 CLEANFILES = \
 	libdissectors.a			\
 	libdissectors.la		\
@@ -1978,15 +1964,13 @@ CLEANFILES = \
 	libdirtydissectors.la		\
 	register.c-tmp			\
 	register-cache.pkl		\
-	$(GENERATED_HEADER_FILES)	\
 	*~
 
 DISTCLEANFILES = \
-	register.c
+	$(NODIST_GENERATED_FILES)
 
-MAINTAINERCLEANFILES =	\
-	$(GENERATED_FILES)	\
-	Makefile.in
+MAINTAINERCLEANFILES = \
+	packet-ncp2222.c
 
 checkapi:
 	$(PERL) $(top_srcdir)/tools/checkAPIs.pl -g abort -g termoutput -build \

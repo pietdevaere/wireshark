@@ -41,26 +41,6 @@ include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-set(COMPRESS_FILES
-	compress/lzxpress.c
-)
-source_group(compress FILES ${COMPRESS_FILES})
-
-set(LIBWIRESHARK_ASM_FILES
-	asm_utils.c
-# todo
-#	!IFDEF NASM
-#	asm_utils_win32_x86.obj: asm_utils_win32_x86.asm
-#	        $(NASM) -f $(WIRESHARK_TARGET_PLATFORM) -o $@ $?
-#	!ENDIF
-#	...
-#	!IF defined(NASM) && "$(WIRESHARK_TARGET_PLATFORM)" == "win32"
-#	        asm_utils_win32_x86.obj
-#	!ELSE
-#	        asm_utils.obj
-#	!ENDIF
-)
-
 add_custom_command(
 	OUTPUT ps.c
 	COMMAND ${PYTHON_EXECUTABLE}
@@ -88,7 +68,6 @@ set(LIBWIRESHARK_PUBLIC_HEADERS
 	capture_dissectors.h
 	charsets.h
 	chdlctypes.h
-	circuit.h
 	color_filters.h
 	column.h
 	column-info.h
@@ -204,7 +183,6 @@ set(LIBWIRESHARK_FILES
 	asn1.c
 	capture_dissectors.c
 	charsets.c
-	circuit.c
 	color_filters.c
 	column.c
 	column-utils.c
@@ -238,12 +216,10 @@ set(LIBWIRESHARK_FILES
 	iana_charsets.c
 	in_cksum.c
 	ipproto.c
-	ipv4.c
 	media_params.c
 	next_tvb.c
 	oids.c
 	osi-utils.c
-	oui.c
 	packet.c
 	print.c
 	print_stream.c
@@ -321,8 +297,6 @@ set(epan_LIBS
 
 set(CLEAN_FILES
 	${LIBWIRESHARK_CLEAN_FILES}
-	${COMPRESS_FILES}
-	${LIBWIRESHARK_ASM_FILES}
 )
 
 set_source_files_properties(
@@ -332,7 +306,7 @@ set_source_files_properties(
 )
 
 # Cannot use $<$<BOOL:${HAVE_LIBLUA}>:$<TARGET_OBJECTS:wslua>> as that breaks
-# get_target_property(_libwireshark_location epan LOCATION).
+# with CMake 3.0 (CMake 3.1 is OK)
 if(HAVE_LIBLUA)
 	set(wslua_sources $<TARGET_OBJECTS:wslua>)
 else()
@@ -341,8 +315,6 @@ endif()
 add_library(epan ${LINK_MODE_LIB}
 	${LIBWIRESHARK_FILES}
 	${GENERATED_FILES}
-	${COMPRESS_FILES}
-	${LIBWIRESHARK_ASM_FILES}
 	$<TARGET_OBJECTS:crypt>
 	$<TARGET_OBJECTS:dfilter>
 	$<TARGET_OBJECTS:dissectors>
@@ -357,10 +329,11 @@ add_dependencies(epan version)
 
 set(FULL_SO_VERSION "0.0.0")
 
-set_target_properties(epan PROPERTIES COMPILE_DEFINITIONS "WS_BUILD_DLL")
-set_target_properties(epan PROPERTIES COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}")
-set_target_properties(epan PROPERTIES LINK_FLAGS "${WS_LINK_FLAGS}")
-set_target_properties(epan PROPERTIES VERSION ${FULL_SO_VERSION} SOVERSION 0)
+set_target_properties(epan PROPERTIES
+	COMPILE_DEFINITIONS "WS_BUILD_DLL"
+	LINK_FLAGS "${WS_LINK_FLAGS}"
+	VERSION ${FULL_SO_VERSION} SOVERSION 0
+)
 
 if(ENABLE_APPLICATION_BUNDLE)
 	set_target_properties(epan PROPERTIES
@@ -372,7 +345,6 @@ ABICHECK(libwireshark)
 
 set(TOP_LEVEL_HEADERS ${CMAKE_BINARY_DIR}/config.h ${CMAKE_SOURCE_DIR}/register.h)
 file(GLOB CRYPT_HEADERS crypt/*.h)
-file(GLOB COMPRESS_HEADERS compress/*.h)
 file(GLOB DFILTER_HEADERS dfilter/*.h ../tools/lemon/cppmagic.h)
 file(GLOB D_HEADERS dissectors/*.h)
 file(GLOB FTYPES_HEADERS ftypes/*.h)
@@ -383,7 +355,6 @@ add_custom_command(OUTPUT libwireshark.abi.tar.gz
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}/epan
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}/crypt
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}/compress
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}/dfilter
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}/dissectors
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ABICHECK_TMPDIR}/ftypes
@@ -391,7 +362,6 @@ add_custom_command(OUTPUT libwireshark.abi.tar.gz
 	COMMAND ${ABI_COPY_COMMAND} ${TOP_LEVEL_HEADERS} ${ABICHECK_TMPDIR} ${ABI_COPY_FLAGS}
 	COMMAND ${ABI_COPY_COMMAND} ${ABICHECK_HEADERS} ${ABICHECK_TMPDIR}/epan ${ABI_COPY_FLAGS}
 	COMMAND ${ABI_COPY_COMMAND} ${CRYPT_HEADERS} ${ABICHECK_TMPDIR}/crypt ${ABI_COPY_FLAGS}
-	COMMAND ${ABI_COPY_COMMAND} ${COMPRESS_HEADERS} ${ABICHECK_TMPDIR}/compress ${ABI_COPY_FLAGS}
 	COMMAND ${ABI_COPY_COMMAND} ${DFILTER_HEADERS} ${ABICHECK_TMPDIR}/dfilter ${ABI_COPY_FLAGS}
 	COMMAND ${ABI_COPY_COMMAND} ${D_HEADERS} ${ABICHECK_TMPDIR}/dissectors ${ABI_COPY_FLAGS}
 	COMMAND ${ABI_COPY_COMMAND} ${FTYPES_HEADERS} ${ABICHECK_TMPDIR}/ftypes ${ABI_COPY_FLAGS}
@@ -406,11 +376,10 @@ add_custom_command(OUTPUT libwireshark.abi.tar.gz
 	COMMAND rm -rf ${ABICHECK_TMPDIR} ${CMAKE_CURRENT_BINARY_DIR}/abi_dumps
 #	COMMAND rm -rf ${CMAKE_CURRENT_BINARY_DIR}/abi_dumps ${ABICHECK_TMPDIR}/config.h
 #		${ABICHECK_TMPDIR}/epan/* ${ABICHECK_TMPDIR}/crypt/*
-#		${ABICHECK_TMPDIR}/epan/* ${ABICHECK_TMPDIR}/compress/*
 #		${ABICHECK_TMPDIR}/dfilter/* ${ABICHECK_TMPDIR}/dissectors/*
 #		${ABICHECK_TMPDIR}/ftypes/* ${ABICHECK_TMPDIR}/wmem/*
 	DEPENDS ${HEADERS}
-		${CRYPT_HEADERS} ${COMPRESS_HEADERS} ${DFILTER_HEADERS} ${D_HEADERS}
+		${CRYPT_HEADERS} ${DFILTER_HEADERS} ${D_HEADERS}
 		${FTYPES_HEADERS} ${WMEM_HEADERS} epan)
 
 # By default the name for a library with target name epan will be libepan,
@@ -444,7 +413,6 @@ target_link_libraries(exntest ${GLIB2_LIBRARIES})
 set_target_properties(exntest PROPERTIES
 	FOLDER "Tests"
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
-	COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}"
 )
 
 add_executable(oids_test EXCLUDE_FROM_ALL oids_test.c)
@@ -452,7 +420,6 @@ target_link_libraries(oids_test epan ${ZLIB_LIBRARIES})
 set_target_properties(oids_test PROPERTIES
 	FOLDER "Tests"
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
-	COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}"
 )
 
 add_executable(reassemble_test EXCLUDE_FROM_ALL reassemble_test.c)
@@ -466,7 +433,6 @@ target_link_libraries(tvbtest epan)
 set_target_properties(tvbtest PROPERTIES
 	FOLDER "Tests"
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
-	COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}"
 )
 
 CHECKAPI(

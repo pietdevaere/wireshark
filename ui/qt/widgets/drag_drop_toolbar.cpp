@@ -20,6 +20,8 @@
  */
 
 #include <ui/qt/widgets/drag_drop_toolbar.h>
+#include <ui/qt/widgets/drag_label.h>
+#include <ui/qt/utils/wireshark_mime_data.h>
 
 #include <QAction>
 #include <QApplication>
@@ -60,6 +62,10 @@ void DragDropToolBar::childEvent(QChildEvent * event)
     {
         if ( event->child()->isWidgetType() )
         {
+            /* Reset if it has moved underneath lower limit */
+            if ( childCounter < 0 )
+                childCounter = 0;
+
             ((QWidget *)event->child())->installEventFilter(this);
             event->child()->setProperty(drag_drop_toolbar_action_, qVariantFromValue(childCounter));
             childCounter++;
@@ -67,7 +73,16 @@ void DragDropToolBar::childEvent(QChildEvent * event)
     }
     else if ( event->type() == QEvent::ChildRemoved )
     {
-         childCounter--;
+        childCounter--;
+    }
+    else if ( event->type() == QEvent::ChildPolished )
+    {
+        /* Polish is called every time a child is added or removed. This is implemented by adding
+         * all childs again as hidden elements, and afterwards removing the existing ones. Therefore
+         * we have to reset child counter here, if a widget is being polished. If this is not being
+         * done, crashes will occur after an item has been removed and other items are moved afterwards */
+        if ( event->child()->isWidgetType() )
+            childCounter = 0;
     }
 }
 
@@ -93,26 +108,23 @@ bool DragDropToolBar::eventFilter(QObject * obj, QEvent * event)
         if ( ( ev->buttons() & Qt::LeftButton ) && (ev->pos() - dragStartPosition).manhattanLength()
                  > QApplication::startDragDistance())
         {
-            QDrag * drag = new QDrag(elem);
-            QMimeData *mimeData = new QMimeData;
-            mimeData->setData("application/x-wireshark-toolbar-entry",
-                    elem->property(drag_drop_toolbar_action_).toByteArray());
-            drag->setMimeData(mimeData);
+            ToolbarEntryMimeData * temd =
+                    new ToolbarEntryMimeData(((QToolButton *)elem)->text(), elem->property(drag_drop_toolbar_action_).toInt());
+            DragLabel * lbl = new DragLabel(temd->labelText(), this);
+            QDrag * drag = new QDrag(this);
+            drag->setMimeData(temd);
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
             qreal dpr = window()->windowHandle()->devicePixelRatio();
-            QPixmap pixmap(elem->size() * dpr);
+            QPixmap pixmap(lbl->size() * dpr);
             pixmap.setDevicePixelRatio(dpr);
 #else
-            QPixmap pixmap(elem->size());
+            QPixmap pixmap(lbl->size());
 #endif
-            elem->render(&pixmap);
+            lbl->render(&pixmap);
             drag->setPixmap(pixmap);
 
-            Qt::DropAction dropAction = drag->exec(Qt::CopyAction | Qt::MoveAction);
-
-            if (dropAction == Qt::MoveAction)
-                elem->setVisible(false);
+            drag->exec(Qt::CopyAction | Qt::MoveAction);
 
             return true;
         }
@@ -123,10 +135,29 @@ bool DragDropToolBar::eventFilter(QObject * obj, QEvent * event)
 
 void DragDropToolBar::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (event->mimeData()->hasFormat("application/x-wireshark-toolbar-entry"))
+    if ( ! event )
+        return;
+
+    if (qobject_cast<const ToolbarEntryMimeData *>(event->mimeData()))
     {
         if (event->source() == this) {
             event->setDropAction(Qt::MoveAction);
+            event->accept();
+        } else {
+            event->acceptProposedAction();
+        }
+    } else if (qobject_cast<const DisplayFilterMimeData *>(event->mimeData())) {
+        if ( event->source() != this )
+        {
+            event->setDropAction(Qt::CopyAction);
+            event->accept();
+        } else {
+            event->acceptProposedAction();
+        }
+    } else if (qobject_cast<const DisplayFilterMimeData *>(event->mimeData())) {
+        if ( event->source() != this )
+        {
+            event->setDropAction(Qt::CopyAction);
             event->accept();
         } else {
             event->acceptProposedAction();
@@ -138,24 +169,24 @@ void DragDropToolBar::dragEnterEvent(QDragEnterEvent *event)
 
 void DragDropToolBar::dragMoveEvent(QDragMoveEvent *event)
 {
-    if (event->mimeData()->hasFormat("application/x-wireshark-toolbar-entry"))
+    if ( ! event )
+        return;
+
+    if (qobject_cast<const ToolbarEntryMimeData *>(event->mimeData()))
     {
         if (event->source() == this) {
             event->setDropAction(Qt::MoveAction);
             event->accept();
         } else {
             event->acceptProposedAction();
-            QAction * action = actionAt(event->pos());
-            if ( action )
-            {
-                foreach(QAction * act, actions())
-                {
-                    if ( widgetForAction(act) )
-                        widgetForAction(act)->setStyleSheet("QWidget { border: none; };");
-                }
-
-                widgetForAction(action)->setStyleSheet("QWidget { border: 2px dotted grey; };");
-            }
+        }
+    } else if (qobject_cast<const DisplayFilterMimeData *>(event->mimeData())) {
+        if ( event->source() != this )
+        {
+            event->setDropAction(Qt::CopyAction);
+            event->accept();
+        } else {
+            event->acceptProposedAction();
         }
     } else {
         event->ignore();
@@ -164,9 +195,15 @@ void DragDropToolBar::dragMoveEvent(QDragMoveEvent *event)
 
 void DragDropToolBar::dropEvent(QDropEvent *event)
 {
-    if (event->mimeData()->hasFormat("application/x-wireshark-toolbar-entry"))
+    if ( ! event )
+        return;
+
+    /* Moving items around */
+    if (qobject_cast<const ToolbarEntryMimeData *>(event->mimeData()))
     {
-        int oldPos = event->mimeData()->data("application/x-wireshark-toolbar-entry").toInt();
+        const ToolbarEntryMimeData * data = qobject_cast<const ToolbarEntryMimeData *>(event->mimeData());
+
+        int oldPos = data->position();
         int newPos = -1;
         QAction * action = actionAt(event->pos());
         if ( action && actions().at(oldPos) )
@@ -180,6 +217,20 @@ void DragDropToolBar::dropEvent(QDropEvent *event)
         if (event->source() == this) {
             event->setDropAction(Qt::MoveAction);
             event->accept();
+        } else {
+            event->acceptProposedAction();
+        }
+
+    } else if (qobject_cast<const DisplayFilterMimeData *>(event->mimeData())) {
+        const DisplayFilterMimeData * data = qobject_cast<const DisplayFilterMimeData *>(event->mimeData());
+
+        if ( event->source() != this )
+        {
+            event->setDropAction(Qt::CopyAction);
+            event->accept();
+
+            emit newFilterDropped(data->description(), data->filter());
+
         } else {
             event->acceptProposedAction();
         }

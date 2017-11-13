@@ -177,7 +177,7 @@ AC_DEFUN([AC_WIRESHARK_PCAP_CHECK],
 	    # Found it, and it's usable; use it to get the include flags
 	    # for libpcap.
 	    #
-	    PCAP_CFLAGS=`\"$PCAP_CONFIG\" --cflags`
+	    PCAP_CFLAGS="`\"$PCAP_CONFIG\" --cflags`"
 	    #
 	    # We have pcap-config; we assume that means we have libpcap
 	    # installed and that pcap-config will tell us whatever
@@ -195,13 +195,14 @@ AC_DEFUN([AC_WIRESHARK_PCAP_CHECK],
 	    # but we may have to look for the header in a "pcap"
 	    # subdirectory of "/usr/include" or "/usr/local/include",
 	    # as some systems apparently put "pcap.h" in a "pcap"
-	    # subdirectory, and we also check "$prefix/include" - and
+	    # subdirectory without also providing a "pcap.h" in the top-level
+	    # include directory, and we also check "$prefix/include" - and
 	    # "$prefix/include/pcap", in case $prefix is set to
 	    # "/usr/include" or "/usr/local/include".
 	    #
-	    # XXX - should we just add "$prefix/include" to the include
-	    # search path and "$prefix/lib" to the library search path?
-	    #
+	    PCAP_CFLAGS=""
+	    PCAP_LIBS="-lpcap"
+
 	    AC_MSG_CHECKING(for extraneous pcap header directories)
 	    found_pcap_dir=""
 	    pcap_dir_list="/usr/local/include/pcap /usr/include/pcap $prefix/include/pcap $prefix/include"
@@ -918,7 +919,7 @@ AC_DEFUN([AC_WIRESHARK_KRB5_CHECK],
 	  ac_krb5_version="$ac_heimdal_version$ac_mit_version_olddir$ac_mit_version_newdir"
 	  if test "x$ac_krb5_version" = "xHEIMDAL"
 	  then
-	      KRB5_LIBS="-L$krb5_dir/lib -lkrb5 -lasn1 $SSL_LIBS -lroken -lcrypt"
+	      KRB5_LIBS="-L$krb5_dir/lib -lkrb5 -lasn1 -lcrypto -lroken -lcrypt"
 	  else
 	      KRB5_LIBS="-L$krb5_dir/lib -lkrb5 -lk5crypto -lcom_err"
 	  fi
@@ -932,33 +933,23 @@ AC_DEFUN([AC_WIRESHARK_KRB5_CHECK],
 	  then
 	    KRB5_CFLAGS=`"$KRB5_CONFIG" --cflags`
 	    KRB5_LIBS=`"$KRB5_CONFIG" --libs`
-	    #
-	    # If -lcrypto is in KRB5_FLAGS, we require it to build
-	    # with Heimdal/MIT.  We don't want to built with it by
-	    # default, due to annoying license incompatibilities
-	    # between the OpenSSL license and the GPL, so:
-	    #
-	    #	if SSL_LIBS is set to a non-empty string, we
-	    #	remove -lcrypto from KRB5_LIBS and replace
-	    #	it with SSL_LIBS;
-	    #
-	    #	if SSL_LIBS is not set to a non-empty string
-	    #	we fail with an appropriate error message.
-	    #
-	    case "$KRB5_LIBS" in
-	    *-lcrypto*)
-		if test ! -z "$SSL_LIBS"
-		then
-		    KRB5_LIBS=`echo $KRB5_LIBS | sed 's/-lcrypto//'`
-		    KRB5_LIBS="$KRB5_LIBS $SSL_LIBS"
-		else
-		    AC_MSG_ERROR([Kerberos library requires -lcrypto, so you must specify --with-ssl])
-		fi
-		;;
-	    esac
 	    ac_krb5_version=`"$KRB5_CONFIG" --version | head -n 1 | sed -e 's/^.*heimdal.*$/HEIMDAL/' -e 's/^Kerberos .*$/MIT/' -e 's/^Solaris Kerberos .*$/MIT/'`
  	  fi
 	fi
+	#
+	# If -lcrypto is in KRB5_LIBS, we require it to build
+	# with Heimdal/MIT.  We don't want to built with it by
+	# default, due to annoying license incompatibilities
+	# between the OpenSSL license and the GPL.
+	#
+	case "$KRB5_LIBS" in
+	*-lcrypto*)
+	  if test "x$with_krb5_crypto_openssl" != "xyes"
+	    then
+	      AC_MSG_ERROR([Kerberos library requires -lcrypto, so you must specify --with-krb5-crypto-openssl])
+	    fi
+	    ;;
+	esac
 
 	CPPFLAGS="$CPPFLAGS $KRB5_CFLAGS"
 

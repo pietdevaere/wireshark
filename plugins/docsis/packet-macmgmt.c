@@ -200,8 +200,8 @@ void proto_reg_handoff_docsis_mgmt(void);
 #define IUC_ADV_PHY_SHORT_DATA_GRANT 9
 #define IUC_ADV_PHY_LONG_DATA_GRANT 10
 #define IUC_ADV_PHY_UGS 11
-#define IUC_RESERVED12 12
-#define IUC_RESERVED13 13
+#define IUC_DATA_PROFILE_IUC12 12
+#define IUC_DATA_PROFILE_IUC13 13
 #define IUC_RESERVED14 14
 #define IUC_EXPANSION 15
 
@@ -1073,6 +1073,7 @@ static gint ett_docsis_rngreq = -1;
 static gint ett_docsis_rngrsp = -1;
 static gint ett_docsis_rngrsptlv = -1;
 static gint ett_docsis_rngrsp_tlv_transmit_equalization_encodings = -1;
+static gint ett_docsis_rngrsp_tlv_transmit_equalization_encodings_coef = -1;
 static gint ett_docsis_rngrsp_tlv_commanded_power_subtlv = -1;
 static gint ett_docsis_rngrsp_tlv_commanded_power = -1;
 
@@ -1297,6 +1298,7 @@ static const value_string mgmt_type_vals[] = {
   {MGT_STATUS_ACK,     "Status Report Acknowledge"},
   {MGT_OCD,            "OFDM Channel Descriptor"},
   {MGT_DPD,            "Downstream Profile Descriptor"},
+  {MGT_TYPE51UCD,      "Upstream Channel Descriptor Type 51"},
   {0, NULL}
 };
 
@@ -1335,8 +1337,8 @@ static const value_string iuc_vals[] = {
   {IUC_ADV_PHY_SHORT_DATA_GRANT, "Advanced Phy Short Data Grant"},
   {IUC_ADV_PHY_LONG_DATA_GRANT,  "Advanced Phy Long Data Grant"},
   {IUC_ADV_PHY_UGS,              "Advanced Phy UGS"},
-  {IUC_RESERVED12,               "Reserved"},
-  {IUC_RESERVED13,               "Reserved"},
+  {IUC_DATA_PROFILE_IUC12,       "Data Profile IUC12"},
+  {IUC_DATA_PROFILE_IUC13,       "Data Profile IUC13"},
   {IUC_RESERVED14,               "Reserved"},
   {IUC_EXPANSION,                "Expanded IUC"},
   {0, NULL}
@@ -1382,8 +1384,6 @@ two_compl_frac(
         "%f",
         frac/16384.0);
 }
-
-
 
 static const value_string rngrsp_tlv_vals[] = {
   {RNGRSP_TIMING,            "Timing Adjust (6.25us/64)"},
@@ -2016,6 +2016,7 @@ static const value_string subc_spacing_vals[] = {
 };
 
 static const value_string ofdma_prof_mod_order[] = {
+  {0, "no bit-loading"},
   {1, "BPSK"},
   {2, "QPSK"},
   {3, "8-QAM"},
@@ -2083,17 +2084,19 @@ dissect_sync (tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* data
 }
 
 static void
-dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, int pos, guint16 len)
+dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, proto_item * item, int pos, guint16 len)
 {
   int tlvpos, endtlvpos;
   guint8 tlvtype;
   guint32 i, tlvlen;
   proto_tree *burst_tree;
   proto_item *burst_item, *burst_len_item;
+  guint iuc;
 
   tlvpos = pos;
   endtlvpos = tlvpos + len;
-  proto_tree_add_item (tree, hf_docsis_ucd_iuc, tvb, tlvpos++, 1, ENC_BIG_ENDIAN);
+  proto_tree_add_item_ret_uint (tree, hf_docsis_ucd_iuc, tvb, tlvpos++, 1, ENC_BIG_ENDIAN, &iuc);
+  proto_item_append_text(item, ": IUC %d (%s)", iuc, val_to_str(iuc,iuc_vals, "Unknown IUC"));
   while (tlvpos < endtlvpos)
   {
     tlvtype = tvb_get_guint8 (tvb, tlvpos);
@@ -2249,7 +2252,7 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_SCMDA_SCRAMBLER_ONOFF:
       if (tlvlen == 1)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_ucd_scdma_scrambler_onoff, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_ucd_scdma_scrambler_onoff, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2259,7 +2262,7 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_SCDMA_CODES_PER_SUBFRAME:
       if (tlvlen == 1)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_ucd_scdma_codes_per_subframe, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_ucd_scdma_codes_per_subframe, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2269,7 +2272,7 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_SCDMA_FRAMER_INT_STEP_SIZE:
       if (tlvlen == 1)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_ucd_scdma_framer_int_step_size, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_ucd_scdma_framer_int_step_size, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2279,7 +2282,7 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_TCM_ENABLED:
       if (tlvlen == 1)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_ucd_tcm_enabled, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_ucd_tcm_enabled, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2289,7 +2292,7 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_SUBC_INIT_RANG:
       if (tlvlen == 2)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_subc_init_rang, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_subc_init_rang, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2299,7 +2302,7 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_SUBC_FINE_RANG:
       if (tlvlen == 2)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_subc_fine_rang, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_subc_fine_rang, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2310,9 +2313,9 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
       if ((tlvlen % 2) == 0)
       {
         for(i =0; i < tlvlen; i+=2) {
-          proto_tree_add_item (burst_tree, hf_docsis_ofdma_prof_mod_order, tvb, pos + i, 1, ENC_BIG_ENDIAN);
-          proto_tree_add_item (burst_tree, hf_docsis_ofdma_prof_pilot_pattern, tvb, pos + i, 1, ENC_BIG_ENDIAN);
-          proto_tree_add_item (burst_tree, hf_docsis_ofdma_prof_num_add_minislots, tvb, pos + i + 1, 1, ENC_BIG_ENDIAN);
+          proto_tree_add_item (burst_tree, hf_docsis_ofdma_prof_mod_order, tvb, tlvpos + i, 1, ENC_BIG_ENDIAN);
+          proto_tree_add_item (burst_tree, hf_docsis_ofdma_prof_pilot_pattern, tvb, tlvpos + i, 1, ENC_BIG_ENDIAN);
+          proto_tree_add_item (burst_tree, hf_docsis_ofdma_prof_num_add_minislots, tvb, tlvpos + i + 1, 1, ENC_BIG_ENDIAN);
         }
       }
       else
@@ -2323,8 +2326,8 @@ dissect_ucd_burst_descr(tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree, i
     case UCD_OFDMA_IR_POWER_CONTROL:
       if (tlvlen == 2)
       {
-        proto_tree_add_item (burst_tree, hf_docsis_ofdma_ir_pow_ctrl_start_pow, tvb, pos, tlvlen, ENC_BIG_ENDIAN);
-        proto_tree_add_item (burst_tree, hf_docsis_ofdma_ir_pow_ctrl_step_size, tvb, pos + 1, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_ofdma_ir_pow_ctrl_start_pow, tvb, tlvpos, tlvlen, ENC_BIG_ENDIAN);
+        proto_tree_add_item (burst_tree, hf_docsis_ofdma_ir_pow_ctrl_step_size, tvb, tlvpos + 1, tlvlen, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -2408,7 +2411,7 @@ dissect_any_ucd (tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, int pro
     case UCD_BURST_DESCR:
     case UCD_BURST_DESCR5: /* DOCSIS 2.0 Upstream Channel Descriptor */
     case UCD_BURST_DESCR23:
-      dissect_ucd_burst_descr(tvb, pinfo, tlv_tree, pos, length);
+      dissect_ucd_burst_descr(tvb, pinfo, tlv_tree, tlv_item, pos, length);
       break;
     case UCD_EXT_PREAMBLE:
       proto_tree_add_item (tlv_tree, hf_docsis_ucd_ext_preamble_pat, tvb, pos, length, ENC_NA);
@@ -2855,16 +2858,20 @@ dissect_rngrsp_transmit_equalization_encodings(tvbuff_t * tvb, proto_tree * tree
 {
   guint16 i;
   proto_item *it;
-  proto_tree *transmit_equalization_encodings_tree;
+  proto_tree *transmit_equalization_encodings_tree, *coef_tree;
+  guint lowest_subc;
 
   it = proto_tree_add_item(tree, hf_docsis_rngrsp_trans_eq_data, tvb, start-2, len+2, ENC_NA);
   transmit_equalization_encodings_tree = proto_item_add_subtree (it, ett_docsis_rngrsp_tlv_transmit_equalization_encodings);
 
-  proto_tree_add_item (transmit_equalization_encodings_tree, hf_docsis_rngrsp_trans_eq_enc_lowest_subc, tvb, start, 3, ENC_BIG_ENDIAN);
+  proto_tree_add_item_ret_uint (transmit_equalization_encodings_tree, hf_docsis_rngrsp_trans_eq_enc_lowest_subc, tvb, start, 3, ENC_BIG_ENDIAN, &lowest_subc);
   proto_tree_add_item (transmit_equalization_encodings_tree, hf_docsis_rngrsp_trans_eq_enc_highest_subc, tvb, start, 3, ENC_BIG_ENDIAN);
   for(i=3; i < len; i+=4) {
-    proto_tree_add_item (transmit_equalization_encodings_tree, hf_docsis_rngrsp_trans_eq_enc_coef_real, tvb, start + i, 2, ENC_BIG_ENDIAN);
-    proto_tree_add_item (transmit_equalization_encodings_tree, hf_docsis_rngrsp_trans_eq_enc_coef_imag, tvb, start + i + 2, 2, ENC_BIG_ENDIAN);
+    gint real, imag;
+    coef_tree = proto_tree_add_subtree_format (transmit_equalization_encodings_tree, tvb, start + i, 4, ett_docsis_rngrsp_tlv_transmit_equalization_encodings_coef, NULL, "Subcarrier %d: ", lowest_subc + (i-3)/4);
+    proto_tree_add_item_ret_int (coef_tree, hf_docsis_rngrsp_trans_eq_enc_coef_real, tvb, start + i, 2, ENC_BIG_ENDIAN, &real);
+    proto_tree_add_item_ret_int (coef_tree, hf_docsis_rngrsp_trans_eq_enc_coef_imag, tvb, start + i + 2, 2, ENC_BIG_ENDIAN, &imag);
+    proto_item_append_text(coef_tree, "real: %f, imag: %f", (gint16) real/16384.0, (gint16) imag/16384.0);
   }
 }
 
@@ -5574,7 +5581,7 @@ static void
 dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
 {
   proto_item *it, *tlv_item, *tlv_len_item;
-  proto_tree *tlv_tree;
+  proto_tree *tlv_tree, *tlvtlv_tree;
   guint16 pos = 0;
   guint8 type;
   guint32 length;
@@ -5585,13 +5592,13 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
   while (tvb_reported_length_remaining(tvb, pos) > 0)
   {
     type = tvb_get_guint8 (tvb, pos);
-    tlv_tree = proto_tree_add_subtree(tlv_tree, tvb, pos, -1,
+    tlvtlv_tree = proto_tree_add_subtree(tlv_tree, tvb, pos, -1,
                                             ett_docsis_ocd_tlvtlv, &tlv_item,
                                             val_to_str(type, ocd_tlv_vals,
                                                        "Unknown TLV (%u)"));
-    proto_tree_add_uint (tlv_tree, hf_docsis_ocd_type, tvb, pos, 1, type);
+    proto_tree_add_uint (tlvtlv_tree, hf_docsis_ocd_type, tvb, pos, 1, type);
     pos++;
-    tlv_len_item = proto_tree_add_item_ret_uint (tlv_tree, hf_docsis_ocd_length, tvb, pos, 1, ENC_NA, &length);
+    tlv_len_item = proto_tree_add_item_ret_uint (tlvtlv_tree, hf_docsis_ocd_length, tvb, pos, 1, ENC_NA, &length);
     pos++;
     proto_item_set_len(tlv_item, length + 2);
 
@@ -5600,7 +5607,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case DISCRETE_FOURIER_TRANSFORM_SIZE:
       if (length == 1)
       {
-        proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_four_trans_size, tvb, pos, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_four_trans_size, tvb, pos, 1, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -5610,7 +5617,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case CYCLIC_PREFIX:
       if (length == 1)
       {
-        proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_cycl_pref, tvb, pos, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_cycl_pref, tvb, pos, 1, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -5620,7 +5627,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case ROLL_OFF:
       if (length == 1)
       {
-        proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_roll_off, tvb, pos, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_roll_off, tvb, pos, 1, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -5630,7 +5637,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case OFDM_SPECTRUM_LOCATION:
       if (length == 4)
       {
-        proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_ofdm_spec_loc, tvb, pos, 4, ENC_BIG_ENDIAN);
+        proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_ofdm_spec_loc, tvb, pos, 4, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -5640,7 +5647,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case TIME_INTERLEAVING_DEPTH:
       if (length == 1)
       {
-        proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_time_int_depth, tvb, pos, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_time_int_depth, tvb, pos, 1, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -5650,7 +5657,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case SUBCARRIER_ASSIGNMENT_RANGE_LIST:
       if (length >= 5)
       {
-        dissect_subcarrier_assignment_range_list(tvb, pinfo, tlv_tree, pos, length);
+        dissect_subcarrier_assignment_range_list(tvb, pinfo, tlvtlv_tree, pos, length);
       }
       else
       {
@@ -5660,7 +5667,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
     case PRIMARY_CAPABILITY_INDICATOR:
       if (length == 1)
       {
-        proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_prim_cap_ind, tvb, pos, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_prim_cap_ind, tvb, pos, 1, ENC_BIG_ENDIAN);
       }
       else
       {
@@ -5668,7 +5675,7 @@ dissect_ocd_tlv (tvbuff_t * tvb, packet_info* pinfo, proto_tree * tree)
       }
       break;
     default:
-      proto_tree_add_item (tlv_tree, hf_docsis_ocd_tlv_unknown, tvb, pos - 2, length+2, ENC_NA);
+      proto_tree_add_item (tlvtlv_tree, hf_docsis_ocd_tlv_unknown, tvb, pos - 2, length+2, ENC_NA);
       break;
     } /* switch */
     pos += length;
@@ -5703,11 +5710,13 @@ dissect_dpd_subcarrier_assignment_range_list(tvbuff_t * tvb, packet_info * pinfo
 {
   guint32 i, subcarrier_assignment_type;
   proto_item* type_item;
+  guint modulation;
 
   type_item = proto_tree_add_item_ret_uint (tree, hf_docsis_dpd_tlv_subc_assign_type, tvb, pos, 1, ENC_BIG_ENDIAN, &subcarrier_assignment_type);
   proto_tree_add_item (tree, hf_docsis_dpd_tlv_subc_assign_value, tvb, pos, 1, ENC_BIG_ENDIAN);
   proto_tree_add_item (tree, hf_docsis_dpd_tlv_subc_assign_reserved, tvb, pos, 1, ENC_BIG_ENDIAN);
-  proto_tree_add_item (tree, hf_docsis_dpd_tlv_subc_assign_modulation, tvb, pos, 1, ENC_BIG_ENDIAN);
+  proto_tree_add_item_ret_uint (tree, hf_docsis_dpd_tlv_subc_assign_modulation, tvb, pos, 1, ENC_BIG_ENDIAN, &modulation);
+  col_append_str(pinfo->cinfo, COL_INFO, val_to_str(modulation, docsis_dpd_subc_assign_modulation_str, "%s"));
   pos++;
 
   switch (subcarrier_assignment_type)
@@ -5757,6 +5766,7 @@ dissect_dpd_tlv (tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree)
   guint pos = 0;
   guint length;
   guint8 type;
+  guint first_subc_assign_list = 1;
 
   it = proto_tree_add_item(tree, hf_docsis_dpd_tlv_data, tvb, 0, tvb_reported_length(tvb), ENC_NA);
   tlv_tree = proto_item_add_subtree (it, ett_docsis_dpd_tlv);
@@ -5782,6 +5792,12 @@ dissect_dpd_tlv (tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree)
     case SUBCARRIER_ASSIGNMENT_RANGE_LIST:
       if (length >= 5)
       {
+        if(first_subc_assign_list) {
+          col_append_str(pinfo->cinfo, COL_INFO, ", Modulation: ");
+          first_subc_assign_list = 0;
+        } else {
+          col_append_str(pinfo->cinfo, COL_INFO, " | ");
+        }
         dissect_dpd_subcarrier_assignment_range_list(tvb, pinfo, tlv_tree, pos, length);
       }
       else
@@ -8387,6 +8403,7 @@ proto_register_docsis_mgmt (void)
     &ett_docsis_rngrsp,
     &ett_docsis_rngrsptlv,
     &ett_docsis_rngrsp_tlv_transmit_equalization_encodings,
+    &ett_docsis_rngrsp_tlv_transmit_equalization_encodings_coef,
     &ett_docsis_rngrsp_tlv_commanded_power,
     &ett_docsis_rngrsp_tlv_commanded_power_subtlv,
     &ett_docsis_regreq,

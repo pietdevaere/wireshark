@@ -146,11 +146,7 @@ uat_wep_key_record_copy_cb(void* n, const void* o, size_t siz _U_)
   uat_wep_key_record_t* new_key = (uat_wep_key_record_t *)n;
   const uat_wep_key_record_t* old_key = (const uat_wep_key_record_t *)o;
 
-  if (old_key->string) {
-    new_key->string = g_strdup(old_key->string);
-  } else {
-    new_key->string = NULL;
-  }
+  new_key->string = g_strdup(old_key->string);
 
   return new_key;
 }
@@ -210,8 +206,7 @@ static void
 uat_wep_key_record_free_cb(void*r)
 {
   uat_wep_key_record_t* key = (uat_wep_key_record_t *)r;
-
-  if (key->string) g_free(key->string);
+  g_free(key->string);
 }
 
 UAT_VS_DEF(uat_wep_key_records, key, uat_wep_key_record_t, guint8, 0, STRING_KEY_TYPE_WEP)
@@ -726,6 +721,7 @@ static const value_string wfa_subtype_vals[] = {
   { WFA_SUBTYPE_HS20_INDICATION, "Hotspot 2.0 Indication" },
   { WFA_SUBTYPE_HS20_ANQP, "Hotspot 2.0 ANQP" },
   { WFA_SUBTYPE_DPP, "Device Provisioning Protocol" },
+  { WFA_SUBTYPE_IEEE1905_MULTI_AP, "IEEE1905 Multi-AP" },
   { 0, NULL }
 };
 
@@ -4365,6 +4361,7 @@ static int hf_ieee80211_wfa_ie_wme_tspec_medium = -1;
 
 static int hf_ieee80211_aironet_ie_type = -1;
 static int hf_ieee80211_aironet_ie_dtpc = -1;
+static int hf_ieee80211_aironet_ie_dtpc_unknown = -1;
 static int hf_ieee80211_aironet_ie_version = -1;
 static int hf_ieee80211_aironet_ie_data = -1;
 static int hf_ieee80211_aironet_ie_qos_reserved = -1;
@@ -5305,7 +5302,7 @@ wlan_conversation_packet(void *pct, packet_info *pinfo, epan_dissect_t *edt _U_,
   conv_hash_t *hash = (conv_hash_t*) pct;
   const wlan_hdr_t *whdr=(const wlan_hdr_t *)vip;
 
-  add_conversation_table_data(hash, &whdr->src, &whdr->dst, 0, 0, 1, pinfo->fd->pkt_len, &pinfo->rel_ts, &pinfo->abs_ts, &wlan_ct_dissector_info, PT_NONE);
+  add_conversation_table_data(hash, &whdr->src, &whdr->dst, 0, 0, 1, pinfo->fd->pkt_len, &pinfo->rel_ts, &pinfo->abs_ts, &wlan_ct_dissector_info, ENDPOINT_NONE);
 
   return 1;
 }
@@ -5330,8 +5327,8 @@ wlan_hostlist_packet(void *pit, packet_info *pinfo, epan_dissect_t *edt _U_, con
   /* Take two "add" passes per packet, adding for each direction, ensures that all
   packets are counted properly (even if address is sending to itself)
   XXX - this could probably be done more efficiently inside hostlist_table */
-  add_hostlist_table_data(hash, &whdr->src, 0, TRUE, 1, pinfo->fd->pkt_len, &wlan_host_dissector_info, PT_NONE);
-  add_hostlist_table_data(hash, &whdr->dst, 0, FALSE, 1, pinfo->fd->pkt_len, &wlan_host_dissector_info, PT_NONE);
+  add_hostlist_table_data(hash, &whdr->src, 0, TRUE, 1, pinfo->fd->pkt_len, &wlan_host_dissector_info, ENDPOINT_NONE);
+  add_hostlist_table_data(hash, &whdr->dst, 0, FALSE, 1, pinfo->fd->pkt_len, &wlan_host_dissector_info, ENDPOINT_NONE);
 
   return 1;
 }
@@ -6039,8 +6036,7 @@ dissect_advertisement_protocol_common(packet_info *pinfo, proto_tree *tree,
                                "Vendor specific info length error");
         return 2 + tag_len;
       }
-      oui = tvb_get_ntoh24(tvb, offset);
-      proto_tree_add_item(adv_tuple_tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_NA);
+      proto_tree_add_item_ret_uint(adv_tuple_tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_BIG_ENDIAN, &oui);
       offset += 3;
       left   -= 3;
       wfa_subtype = tvb_get_guint8(tvb, offset);
@@ -6122,8 +6118,7 @@ dissect_anqp_capab_list(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int
         expert_add_info(pinfo, tree, &ei_ieee80211_ff_anqp_capability);
         return;
       }
-      oui = tvb_get_ntoh24(tvb, offset);
-      proto_tree_add_item(vtree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_NA);
+      proto_tree_add_item_ret_uint(vtree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_BIG_ENDIAN, &oui);
       offset += 3;
       len    -= 3;
 
@@ -6800,8 +6795,7 @@ dissect_anqp_info(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo, int offse
     dissect_domain_name_list(tree, tvb, offset, offset + len);
     break;
   case ANQP_INFO_ANQP_VENDOR_SPECIFIC_LIST:
-    oui = tvb_get_ntoh24(tvb, offset);
-    proto_tree_add_item(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_NA);
+    proto_tree_add_item_ret_uint(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_BIG_ENDIAN, &oui);
     offset += 3;
     vendor_tvb = tvb_new_subset_length(tvb, offset, len);
 
@@ -6874,7 +6868,7 @@ dissect_gas_initial_request(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo,
     if (subtype == ((DPP_CONFIGURATION_PROTOCOL << 8) | WFA_SUBTYPE_DPP)) {
        col_append_fstr(pinfo->cinfo, COL_INFO, ", DPP - %s",
                        val_to_str(subtype >> 8, dpp_subtype_vals, "Unknown (%u)"));
-      dissect_wifi_dpp_attributes(pinfo, query, tvb, offset);
+      dissect_wifi_dpp_config_proto(pinfo, query, tvb, offset);
     }
     break;
   default:
@@ -6918,7 +6912,7 @@ dissect_gas_initial_response(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo
       if (subtype == ((DPP_CONFIGURATION_PROTOCOL << 8) | WFA_SUBTYPE_DPP)) {
          col_append_fstr(pinfo->cinfo, COL_INFO, ", DPP - %s",
                          val_to_str(subtype >> 8, dpp_subtype_vals, "Unknown (%u)"));
-        dissect_wifi_dpp_attributes(pinfo, query, tvb, offset);
+        dissect_wifi_dpp_config_proto(pinfo, query, tvb, offset);
       }
       break;
     default:
@@ -7437,8 +7431,8 @@ static guint
 add_ff_measurement_pilot_int(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo _U_, int offset)
 {
   proto_tree_add_item(tree, hf_ieee80211_ff_measurement_pilot_int, tvb, offset,
-                      2, ENC_LITTLE_ENDIAN);
-  return 2;
+                      1, ENC_NA);
+  return 1;
 }
 
 static guint
@@ -8110,8 +8104,7 @@ add_ff_action_public_fields(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo,
     offset += add_ff_extended_channel_switch_announcement(tree, tvb, pinfo, offset);
     break;
   case PA_VENDOR_SPECIFIC:
-    oui = tvb_get_ntoh24(tvb, offset);
-    proto_tree_add_item(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_NA);
+    proto_tree_add_item_ret_uint(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_BIG_ENDIAN, &oui);
     offset += 3;
     switch (oui) {
     case OUI_WFA:
@@ -8679,8 +8672,7 @@ add_ff_action_vendor_specific(proto_tree *tree, tvbuff_t *tvb, packet_info *pinf
   int dissected;
 
   offset += add_ff_category_code(tree, tvb, pinfo, offset);
-  oui = tvb_get_ntoh24(tvb, offset);
-  proto_tree_add_item(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_NA);
+  proto_tree_add_item_ret_uint(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_BIG_ENDIAN, &oui);
   offset += 3;
 
   vendor_tvb = tvb_new_subset_remaining(tvb, offset);
@@ -9979,14 +9971,14 @@ oui_base_custom(gchar *result, guint32 oui)
   p_oui[2] = oui & 0xFF;
 
   /* Attempt an OUI lookup. */
-  manuf_name = get_manuf_name_if_known(p_oui);
+  manuf_name = uint_get_manuf_name_if_known(oui);
   if (manuf_name == NULL) {
     /* Could not find an OUI. */
-    g_snprintf(result, ITEM_LABEL_LENGTH, "%.2x-%.2x-%.2x", p_oui[0], p_oui[1], p_oui[2]);
+    g_snprintf(result, ITEM_LABEL_LENGTH, "%02x:%02x:%02x", p_oui[0], p_oui[1], p_oui[2]);
   }
   else {
    /* Found an address string. */
-    g_snprintf(result, ITEM_LABEL_LENGTH, "%.2x-%.2x-%.2x (%s)", p_oui[0], p_oui[1], p_oui[2], manuf_name);
+    g_snprintf(result, ITEM_LABEL_LENGTH, "%02x:%02x:%02x (%s)", p_oui[0], p_oui[1], p_oui[2], manuf_name);
   }
 }
 
@@ -10620,7 +10612,7 @@ dissect_vendor_ie_wfa(packet_info *pinfo, proto_item *item, tvbuff_t *tag_tvb)
 
   subtype = tvb_get_guint8(tag_tvb, 3);
   proto_item_append_text(item, ": %s", val_to_str_const(subtype, wfa_subtype_vals, "Unknown"));
-  vendor_tvb = tvb_new_subset_length(tag_tvb, offset, tag_len - 4);
+  vendor_tvb = tvb_new_subset_length(tag_tvb, offset + 4, tag_len - 4);
   dissector_try_uint_new(wifi_alliance_ie_table, subtype, vendor_tvb, pinfo, item, FALSE, NULL);
 }
 
@@ -10869,8 +10861,10 @@ dissect_vendor_ie_aironet(proto_item *aironet_item, proto_tree *ietree,
 
   switch (type) {
   case AIRONET_IE_DTPC:
-    proto_tree_add_item(ietree, hf_ieee80211_aironet_ie_dtpc, tvb, offset, 2, ENC_NA);
-    proto_item_append_text(aironet_item, ": Aironet DTPC Powerlevel 0x%02X", tvb_get_guint8(tvb, offset));
+    proto_tree_add_item(ietree, hf_ieee80211_aironet_ie_dtpc, tvb, offset, 1, ENC_NA);
+    proto_item_append_text(aironet_item, ": Aironet DTPC Powerlevel %ddBm", tvb_get_guint8(tvb, offset));
+    offset += 1;
+    proto_tree_add_item(ietree, hf_ieee80211_aironet_ie_dtpc_unknown, tvb, offset, 1, ENC_NA);
     dont_change = TRUE;
     break;
   case AIRONET_IE_VERSION:
@@ -12615,7 +12609,7 @@ dissect_wapi_param_set(tvbuff_t *tvb, packet_info *pinfo,
     proto_item_append_text(ti, " Unicast Cipher List:");
     for (loop_cnt = 0; loop_cnt < ucast_cnt; loop_cnt++) {
       subtree = proto_item_add_subtree(item, ett_tag_wapi_param_set_ucast_tree);
-      proto_tree_add_item(subtree, hf_ieee80211_tag_wapi_param_set_ucast_cipher_suite_oui, tvb, offset, 3, ENC_NA);
+      proto_tree_add_item(subtree, hf_ieee80211_tag_wapi_param_set_ucast_cipher_suite_oui, tvb, offset, 3, ENC_BIG_ENDIAN);
       offset += 3;
       ucast_cipher_type = tvb_get_guint8(tvb, offset);
       proto_tree_add_item(subtree, hf_ieee80211_tag_wapi_param_set_ucast_cipher_suite_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -13068,6 +13062,42 @@ dissect_rsni_ie(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 
   proto_tree_add_item(tree, hf_ieee80211_tag_rsni, tvb,
                       offset, 1, ENC_LITTLE_ENDIAN);
+
+  return tvb_captured_length(tvb);
+}
+
+static int
+dissect_measurement_pilot_trans_ie(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+{
+  int tag_len = tvb_reported_length(tvb);
+  int offset = 0;
+  const guint8 ids[] = { TAG_VENDOR_SPECIFIC_IE };
+
+  /* The tag len can be 1 or more if there are sub-elements */
+
+  proto_tree_add_item(tree, hf_ieee80211_ff_measurement_pilot_int, tvb, offset,
+                      1, ENC_NA);
+
+  tag_len--;
+  offset++;
+
+  /* Also handle the optional sub-elements */
+
+  if (tag_len > 0) {
+    while (tag_len > 0) {
+      gint8 elt_len = 0;
+
+      elt_len = tvb_get_guint8(tvb, offset + 1);
+
+      if(add_tagged_field(pinfo, tree, tvb, offset + 2, 0, ids, G_N_ELEMENTS(ids), NULL) == 0){
+        /* TODO: Add an expert info here and skip the field. */
+        break;
+      }
+
+      tag_len -= elt_len + 2;
+      offset += elt_len + 2;
+    }
+  }
 
   return tvb_captured_length(tvb);
 }
@@ -15945,8 +15975,7 @@ ieee80211_tag_vendor_specific_ie(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     return tvb_captured_length(tvb);
   }
 
-  oui = tvb_get_ntoh24(tvb, offset);
-  proto_tree_add_item(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_NA);
+  proto_tree_add_item_ret_uint(tree, hf_ieee80211_tag_oui, tvb, offset, 3, ENC_BIG_ENDIAN, &oui);
   proto_item_append_text(field_data->item_tag, ": %s", uint_get_manuf_name_if_known(oui));
   offset += 3;
   tag_vs_len -= 3;
@@ -17450,8 +17479,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
   char             out_buff[SHORT_STR];
   gint             is_iv_bad;
   guchar           iv_buff[4];
-  const char      *addr1_str   = NULL;
-  int              addr1_hf    = -1, addr1_hf_resolved = -1;
+  const char      *addr1_str   = "RA";
   guint            offset;
   const gchar     *fts_str;
   gchar            flag_str[]  = "opmPRMFTC";
@@ -17686,6 +17714,18 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
   frag_number = 0;
   seq_number = 0;
 
+  /* all frames have address 1 = RA */
+  if (tree) {
+    const gchar *ether_name = tvb_get_ether_name(tvb, 4);
+    proto_tree_add_item(hdr_tree, hf_ieee80211_addr_ra, tvb, 4, 6, ENC_NA);
+    hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_ra_resolved, tvb, 4, 6, ether_name);
+    PROTO_ITEM_SET_HIDDEN(hidden_item);
+    hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, 4, 6, ENC_NA);
+    PROTO_ITEM_SET_HIDDEN(hidden_item);
+    hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, 4, 6, ether_name);
+    PROTO_ITEM_SET_HIDDEN(hidden_item);
+  }
+
   switch (FCF_FRAME_TYPE (fcf))
   {
 
@@ -17717,10 +17757,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
       {
         const gchar *ra_da_name, *ta_sa_name, *bssid_name;
 
-        proto_tree_add_item(hdr_tree, hf_ieee80211_addr_ra, tvb, 4, 6, ENC_NA);
         ra_da_name = tvb_get_ether_name(tvb, 4);
-        hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_ra_resolved, tvb, 4, 6, ra_da_name);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
         proto_tree_add_item(hdr_tree, hf_ieee80211_addr_da, tvb, 4, 6, ENC_NA);
         hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_da_resolved, tvb, 4, 6, ra_da_name);
         PROTO_ITEM_SET_HIDDEN(hidden_item);
@@ -17749,10 +17786,6 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           PROTO_ITEM_SET_HIDDEN(hidden_item);
         }
         /* add items for wlan.addr filter */
-        hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, 4, 6, ENC_NA);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
-        hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, 4, 6, ra_da_name);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
         hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, 10, 6, ENC_NA);
         PROTO_ITEM_SET_HIDDEN(hidden_item);
         hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, 10, 6, ta_sa_name);
@@ -17796,55 +17829,18 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           break;
       }
 
-      switch (ctrl_type_subtype)
-      {
-        case CTRL_PS_POLL:
-          addr1_str = "BSSID";
-          addr1_hf = hf_ieee80211_addr_bssid;
-          addr1_hf_resolved = hf_ieee80211_addr_bssid_resolved;
-
-          break;
-        case CTRL_BEAMFORM_RPT_POLL:
-        case CTRL_VHT_NDP_ANNC:
-        case CTRL_RTS:
-        case CTRL_POLL:
-        case CTRL_SPR:
-        case CTRL_GRANT:
-        case CTRL_DMG_CTS:
-        case CTRL_DMG_DTS:
-        case CTRL_GRANT_ACK:
-        case CTRL_SSW:
-        case CTRL_SSW_FEEDBACK:
-        case CTRL_SSW_ACK:
-        case CTRL_CTS:
-        case CTRL_ACKNOWLEDGEMENT:
-        case CTRL_CFP_END:
-        case CTRL_CFP_ENDACK:
-        case CTRL_BLOCK_ACK_REQ:
-        case CTRL_BLOCK_ACK:
-          addr1_str = "RA";
-          addr1_hf = hf_ieee80211_addr_ra;
-          addr1_hf_resolved = hf_ieee80211_addr_ra_resolved;
-          break;
-        default:
-          break;
+      if (ctrl_type_subtype == CTRL_PS_POLL) {
+        addr1_str = "BSSID";
+        if (tree) {
+          const gchar *ether_name = tvb_get_ether_name(tvb, 4);
+          proto_tree_add_item(hdr_tree, hf_ieee80211_addr_bssid, tvb, 4, 6, ENC_NA);
+          hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_bssid_resolved, tvb, 4, 6, ether_name);
+          PROTO_ITEM_SET_HIDDEN(hidden_item);
+        }
       }
-
-      if (!addr1_str) /* XXX - Should we throw some sort of error? */
-        break;
 
       /* Add address 1 */
       set_dst_addr_cols(pinfo, tvb, 4, addr1_str);
-      if (tree) {
-        const gchar *ether_name = tvb_get_ether_name(tvb, 4);
-        proto_tree_add_item(hdr_tree, addr1_hf, tvb, 4, 6, ENC_NA);
-        hidden_item = proto_tree_add_string(hdr_tree, addr1_hf_resolved, tvb, 4, 6, ether_name);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
-        hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, 4, 6, ENC_NA);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
-        hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, 4, 6, ether_name);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
-      }
 
       /*
        * Start shoving in other fields if needed.
@@ -17871,7 +17867,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
         case CTRL_PS_POLL:
         case CTRL_CFP_ENDACK:
         {
-          set_src_addr_cols(pinfo, tvb, offset, "BSSID");
+          set_src_addr_cols(pinfo, tvb, offset, "TA");
           /* if (tree) */
           {
             const gchar *ether_name = tvb_get_ether_name(tvb, offset);
@@ -18337,7 +18333,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
 
     case DATA_FRAME:
     {
-      guint32 ra_offset, da_offset, sa_offset, ta_offset, bssid_offset;
+      guint32 da_offset, sa_offset, ta_offset = 10, bssid_offset;
       addr_type = FCF_ADDR_SELECTOR(fcf);
 
       /* In order to show src/dst address we must always do the following */
@@ -18345,40 +18341,31 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
       {
 
         case DATA_ADDR_T1:
-          ra_offset = 4;
           da_offset = 4;
           sa_offset = 10;
-          ta_offset = 10;
           bssid_offset = 16;
           break;
 
         case DATA_ADDR_T2:
-          ra_offset = 4;
           da_offset = 4;
           sa_offset = 16;
-          ta_offset = 10;
           bssid_offset = 10;
           break;
 
         case DATA_ADDR_T3:
-          ra_offset = 4;
           da_offset = 16;
           sa_offset = 10;
-          ta_offset = 10;
           bssid_offset = 4;
           break;
 
         case DATA_ADDR_T4:
-          ra_offset = 4;
           da_offset = 16;
           sa_offset = 24;
-          ta_offset = 10;
           bssid_offset = 10;
           break;
 
         default:
           /* Should never happen? */
-          ra_offset = 0;
           da_offset = 0;
           sa_offset = 0;
           ta_offset = 0;
@@ -18409,7 +18396,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
       /* Now if we have a tree we start adding stuff */
       if (tree)
       {
-        const gchar *ra_name, *ta_name, *sa_name, *da_name, *bssid_name = NULL;
+        const gchar *ta_name, *sa_name, *da_name, *bssid_name = NULL;
 
         switch (addr_type)
         {
@@ -18417,19 +18404,19 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
           case DATA_ADDR_T2:
           case DATA_ADDR_T3:
           case DATA_ADDR_T4:
-            proto_tree_add_item(hdr_tree, hf_ieee80211_addr_ra, tvb, ra_offset, 6, ENC_NA);
-            ra_name = tvb_get_ether_name(tvb, ra_offset);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_ra_resolved, tvb, ra_offset, 6, ra_name);
+            proto_tree_add_item(hdr_tree, hf_ieee80211_addr_ta, tvb, ta_offset, 6, ENC_NA);
+            ta_name = tvb_get_ether_name(tvb, ta_offset);
+            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_ta_resolved, tvb, ta_offset, 6, ta_name);
+            PROTO_ITEM_SET_HIDDEN(hidden_item);
+            /* TA is always in the wlan.addr filter */
+            hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, ta_offset, 6, ENC_NA);
+            PROTO_ITEM_SET_HIDDEN(hidden_item);
+            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, ta_offset, 6, ta_name);
             PROTO_ITEM_SET_HIDDEN(hidden_item);
 
             proto_tree_add_item(hdr_tree, hf_ieee80211_addr_da, tvb, da_offset, 6, ENC_NA);
             da_name = tvb_get_ether_name(tvb, da_offset);
             hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_da_resolved, tvb, da_offset, 6, da_name);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-
-            proto_tree_add_item(hdr_tree, hf_ieee80211_addr_ta, tvb, ta_offset, 6, ENC_NA);
-            ta_name = tvb_get_ether_name(tvb, ta_offset);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_ta_resolved, tvb, ta_offset, 6, ta_name);
             PROTO_ITEM_SET_HIDDEN(hidden_item);
 
             proto_tree_add_item(hdr_tree, hf_ieee80211_addr_sa, tvb, sa_offset, 6, ENC_NA);
@@ -18443,7 +18430,7 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
             PROTO_ITEM_SET_HIDDEN(hidden_item);
 
             if ((flags & FROM_TO_DS) == FLAG_FROM_DS) { /* Receiver address */
-              sta_addr_offset = ra_offset;
+              sta_addr_offset = 4;
             } else if ((flags & FROM_TO_DS) == FLAG_TO_DS) { /* Transmitter address */
               sta_addr_offset = ta_offset;
             }
@@ -18456,27 +18443,25 @@ dissect_ieee80211_common(tvbuff_t *tvb, packet_info *pinfo,
             proto_tree_add_item(hdr_tree, hf_ieee80211_frag_number, tvb, 22, 2, ENC_LITTLE_ENDIAN);
             proto_tree_add_item(hdr_tree, hf_ieee80211_seq_number, tvb, 22, 2, ENC_LITTLE_ENDIAN);
 
-            /* add items for wlan.addr filter */
-            hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, ra_offset, 6, ENC_NA);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, ra_offset, 6, ra_name);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, ta_offset, 6, ENC_NA);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, ta_offset, 6, ta_name);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, sa_offset, 6, ENC_NA);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, sa_offset, 6, sa_name);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, da_offset, 6, ENC_NA);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, da_offset, 6, da_name);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, bssid_offset, 6, ENC_NA);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, bssid_offset, 6, bssid_name);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
+            /* add 3rd and 4th address for wlan.addr filter */
+            if (sa_offset != 4 && sa_offset != 10) {
+              hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, sa_offset, 6, ENC_NA);
+              PROTO_ITEM_SET_HIDDEN(hidden_item);
+              hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, sa_offset, 6, sa_name);
+              PROTO_ITEM_SET_HIDDEN(hidden_item);
+            }
+            if (da_offset != 4 && da_offset != 10 && da_offset != sa_offset) {
+              hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, da_offset, 6, ENC_NA);
+              PROTO_ITEM_SET_HIDDEN(hidden_item);
+              hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, da_offset, 6, da_name);
+              PROTO_ITEM_SET_HIDDEN(hidden_item);
+            }
+            if (bssid_offset != 4 && bssid_offset != 10 && bssid_offset != sa_offset && bssid_offset != da_offset) {
+              hidden_item = proto_tree_add_item(hdr_tree, hf_ieee80211_addr, tvb, bssid_offset, 6, ENC_NA);
+              PROTO_ITEM_SET_HIDDEN(hidden_item);
+              hidden_item = proto_tree_add_string(hdr_tree, hf_ieee80211_addr_resolved, tvb, bssid_offset, 6, bssid_name);
+              PROTO_ITEM_SET_HIDDEN(hidden_item);
+            }
             break;
         }
 
@@ -22174,7 +22159,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_ff_measurement_pilot_int,
      {"Measurement Pilot Interval", "wlan.fixed.msmtpilotint",
-      FT_UINT16, BASE_HEX, 0, 0,
+      FT_UINT8, BASE_HEX, 0, 0,
       "Measurement Pilot Interval Fixed Field", HFILL }},
 
     {&hf_ieee80211_ff_country_str,
@@ -23528,7 +23513,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_oui,
      {"OUI", "wlan.tag.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       "OUI of vendor specific IE", HFILL }},
 
     {&hf_ieee80211_tag_oui_wfa_subtype,
@@ -23856,7 +23841,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_rsn_gcs_oui,
      {"Group Cipher Suite OUI", "wlan.rsn.gcs.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_rsn_gcs_type,
@@ -23886,7 +23871,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_rsn_pcs_oui,
      {"Pairwise Cipher Suite OUI", "wlan.rsn.pcs.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_rsn_pcs_type,
@@ -23916,7 +23901,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_rsn_akms_oui,
      {"Auth Key Management (AKM) OUI", "wlan.rsn.akms.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_rsn_akms_type,
@@ -23996,7 +23981,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_rsn_gmcs_oui,
      {"Group Management Cipher Suite OUI", "wlan.rsn.gmcs.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_rsn_gmcs_type,
@@ -26351,7 +26336,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_wfa_ie_wpa_mcs_oui,
      {"Multicast Cipher Suite OUI", "wlan.wfa.ie.wpa.mcs.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_wfa_ie_wpa_mcs_type,
@@ -26381,7 +26366,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_wfa_ie_wpa_ucs_oui,
      {"Unicast Cipher Suite OUI", "wlan.wfa.ie.wpau.cs.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_wfa_ie_wpa_ucs_type,
@@ -26411,7 +26396,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_wfa_ie_wpa_akms_oui,
      {"Auth Key Management (AKM) OUI", "wlan.wfa.ie.wpa.akms.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_wfa_ie_wpa_akms_type,
@@ -26806,6 +26791,11 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_aironet_ie_dtpc,
      {"Aironet IE CCX DTCP", "wlan.aironet.dtpc",
+      FT_INT8, BASE_DEC|BASE_UNIT_STRING, &units_dbm, 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_aironet_ie_dtpc_unknown,
+     {"Aironet IE CCX DTCP Unknown", "wlan.aironet.dtpc_unknown",
       FT_BYTES, BASE_NONE, NULL, 0,
       NULL, HFILL }},
 
@@ -27581,7 +27571,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_wapi_param_set_akm_suite_oui,
      {"AKM Suite OUI", "wlan.wapi.akm_suite.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_tag_wapi_param_set_akm_suite_type,
@@ -27596,7 +27586,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_wapi_param_set_ucast_cipher_suite_oui,
      {"Unicast Cipher Suite OUI", "wlan.wapi.unicast_cipher.suite.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_tag_wapi_param_set_ucast_cipher_suite_type,
@@ -27606,7 +27596,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_wapi_param_set_mcast_cipher_suite_oui,
      {"Multicast Cipher Suite OUI", "wlan.wapi.multicast_cipher.suite.oui",
-      FT_UINT24, BASE_CUSTOM, CF_FUNC(oui_base_custom), 0,
+      FT_UINT24, BASE_OUI, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_tag_wapi_param_set_mcast_cipher_suite_type,
@@ -28788,6 +28778,7 @@ proto_reg_handoff_ieee80211(void)
   dissector_add_uint("wlan.tag.number", TAG_BSS_AVG_ACCESS_DELAY, create_dissector_handle(dissect_bss_avg_access_delay_ie, -1));
   dissector_add_uint("wlan.tag.number", TAG_ANTENNA, create_dissector_handle(dissect_antenna_ie, -1));
   dissector_add_uint("wlan.tag.number", TAG_RSNI, create_dissector_handle(dissect_rsni_ie, -1));
+  dissector_add_uint("wlan.tag.number", TAG_MEASURE_PILOT_TRANS, create_dissector_handle(dissect_measurement_pilot_trans_ie, -1));
   dissector_add_uint("wlan.tag.number", TAG_BSS_AVB_ADM_CAPACITY, create_dissector_handle(dissect_bss_available_admission_capacity_ie, -1));
   dissector_add_uint("wlan.tag.number", TAG_IE_68_CONFLICT, create_dissector_handle(ieee80211_tag_ie_68_conflict, -1));
   dissector_add_uint("wlan.tag.number", TAG_BSS_MAX_IDLE_PERIOD, create_dissector_handle(dissect_bss_max_idle_period, -1));
@@ -28848,7 +28839,6 @@ proto_reg_handoff_ieee80211(void)
   dissector_add_uint("wlan.anqp.vendor_specific", OUI_WFA, create_dissector_handle(dissect_vendor_wifi_alliance_anqp, -1));
   dissector_add_uint("wlan.anqp.wifi_alliance.subtype", WFA_SUBTYPE_HS20_ANQP, create_dissector_handle(dissect_hs20_anqp, -1));
   dissector_add_uint("wlan.ie.wifi_alliance.subtype", WFA_SUBTYPE_HS20_INDICATION, create_dissector_handle(dissect_hs20_indication, -1));
-
 }
 
 /*

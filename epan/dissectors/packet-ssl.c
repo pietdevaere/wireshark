@@ -2036,6 +2036,15 @@ dissect_ssl3_handshake(tvbuff_t *tvb, packet_info *pinfo,
      */
     if (maybe_encrypted) {
         maybe_encrypted = tvb_bytes_exist(tvb, offset, 5) && tvb_get_ntoh40(tvb, offset) == 0;
+        /*
+         * Everything after the ChangeCipherSpec message is encrypted.
+         * TODO handle Finished message after CCS in the same frame and remove the
+         * above nonce-based heuristic.
+         */
+        if (!maybe_encrypted) {
+            guint32 ccs_frame = is_from_server ? session->server_ccs_frame : session->client_ccs_frame;
+            maybe_encrypted = ccs_frame != 0 && pinfo->num > ccs_frame;
+        }
     }
 
     /* just as there can be multiple records per packet, there
@@ -3357,11 +3366,11 @@ void ssl_set_master_secret(guint32 frame_num, address *addr_srv, address *addr_c
 
     ssl_debug_printf("\nssl_set_master_secret enter frame #%u\n", frame_num);
 
-    conversation = find_conversation(frame_num, addr_srv, addr_cli, ptype, port_srv, port_cli, 0);
+    conversation = find_conversation(frame_num, addr_srv, addr_cli, conversation_pt_to_endpoint_type(ptype), port_srv, port_cli, 0);
 
     if (!conversation) {
         /* create a new conversation */
-        conversation = conversation_new(frame_num, addr_srv, addr_cli, ptype, port_srv, port_cli, 0);
+        conversation = conversation_new(frame_num, addr_srv, addr_cli, conversation_pt_to_endpoint_type(ptype), port_srv, port_cli, 0);
         ssl_debug_printf("  new conversation = %p created\n", (void *)conversation);
     }
     ssl = ssl_get_session(conversation, ssl_handle);

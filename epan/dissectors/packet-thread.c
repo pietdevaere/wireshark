@@ -32,7 +32,6 @@
 #include <epan/wmem/wmem.h>
 #include <epan/expert.h>
 #include <epan/range.h>
-#include <epan/oui.h>
 #include <epan/prefs.h>
 #include <epan/strutil.h>
 #include <epan/to_str.h>
@@ -1386,7 +1385,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_size_mismatch);
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
                     } else {
-                        struct e_in6_addr prefix;
+                        ws_in6_addr prefix;
 
                         memset(&prefix, 0, sizeof(prefix));
                         tvb_memcpy(tvb, (guint8 *)&prefix.bytes, offset, tlv_len);
@@ -1948,7 +1947,7 @@ dissect_thread_nwd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
                 {
                     guint8 prefix_len;
                     guint8 prefix_byte_len;
-                    struct e_in6_addr prefix;
+                    ws_in6_addr prefix;
                     address prefix_addr;
 
                     /* Domain ID */
@@ -2786,7 +2785,7 @@ proto_register_thread_mc(void)
         { &hf_thread_mc_tlv_vendor_stack_ver_oui,
             { "OUI",
             "thread_meshcop.tlv.vendor_stack_ver_oui",
-            FT_UINT24, BASE_HEX, VALS(oui_vals), 0x0,
+            FT_UINT24, BASE_OUI, NULL, 0x0,
             NULL,
             HFILL }
         },

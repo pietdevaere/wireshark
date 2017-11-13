@@ -27,6 +27,8 @@
 #include "tvbuff.h"
 #include "address.h"
 
+struct endpoint;
+
 /** @file
  * Dissected packet data and metadata.
  */
@@ -69,9 +71,7 @@ typedef struct _packet_info {
   address net_dst;                  /**< network-layer destination address */
   address src;                      /**< source address (net if present, DL otherwise )*/
   address dst;                      /**< destination address (net if present, DL otherwise )*/
-  guint32 vlan_id;                  /**< First encountered VLAN Id if pressent otherwise 0 */
-  circuit_type ctype;               /**< type of circuit, for protocols with a VC identifier */
-  guint32 circuit_id;               /**< circuit ID, for protocols with a VC identifier */
+  guint32 vlan_id;                  /**< First encountered VLAN Id if present otherwise 0 */
   const char *noreassembly_reason;  /**< reason why reassembly wasn't done, if any */
   gboolean fragmented;              /**< TRUE if the protocol is only a fragment */
   struct {
@@ -83,6 +83,8 @@ typedef struct _packet_info {
   guint32 destport;                 /**< destination port */
   guint32 match_uint;               /**< matched uint for calling subdissector from table */
   const char *match_string;         /**< matched string for calling subdissector from table */
+  gboolean use_endpoint;            /**< TRUE if endpoint member should be used for conversations */
+  struct endpoint* conv_endpoint;   /**< Data that can be used for conversations */
   guint16 can_desegment;            /**< >0 if this segment could be desegmented.
                                          A dissector that can offer this API (e.g.
                                          TCP) sets can_desegment=2, then

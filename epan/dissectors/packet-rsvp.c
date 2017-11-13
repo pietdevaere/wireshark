@@ -2102,7 +2102,7 @@ rsvp_conversation_packet(void *pct, packet_info *pinfo, epan_dissect_t *edt _U_,
     const rsvp_conversation_info *rsvph = (const rsvp_conversation_info *)vip;
 
     add_conversation_table_data(hash, &rsvph->source, &rsvph->destination,
-        0, 0, 1, pinfo->fd->pkt_len, &pinfo->rel_ts, &pinfo->abs_ts, &rsvp_ct_dissector_info, PT_NONE);
+        0, 0, 1, pinfo->fd->pkt_len, &pinfo->rel_ts, &pinfo->abs_ts, &rsvp_ct_dissector_info, ENDPOINT_NONE);
 
     return 1;
 }
@@ -2128,8 +2128,8 @@ rsvp_hostlist_packet(void *pit, packet_info *pinfo, epan_dissect_t *edt _U_, con
      * itself). XXX - this could probably be done more efficiently inside
      * hostlist_table
      */
-    add_hostlist_table_data(hash, &rsvph->source, 0, TRUE, 1, pinfo->fd->pkt_len, &rsvp_host_dissector_info, PT_NONE);
-    add_hostlist_table_data(hash, &rsvph->destination, 0, FALSE, 1, pinfo->fd->pkt_len, &rsvp_host_dissector_info, PT_NONE);
+    add_hostlist_table_data(hash, &rsvph->source, 0, TRUE, 1, pinfo->fd->pkt_len, &rsvp_host_dissector_info, ENDPOINT_NONE);
+    add_hostlist_table_data(hash, &rsvph->destination, 0, FALSE, 1, pinfo->fd->pkt_len, &rsvp_host_dissector_info, ENDPOINT_NONE);
     return 1;
 }
 
@@ -8662,7 +8662,7 @@ proto_register_rsvp(void)
         },
 
         {&hf_rsvp_filter[RSVPF_SENDER_LSP_ID],
-         { "Sender LSP ID", "rsvp.sender.lsp_id",
+         { "LSP ID", "rsvp.sender.lsp_id",
            FT_UINT16, BASE_DEC, NULL, 0x0,
            NULL, HFILL }
         },
@@ -10071,7 +10071,7 @@ proto_register_rsvp(void)
       { &hf_rsvp_length, { "Length", "rsvp.length", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_rsvp_extended_tunnel_id, { "Extended Tunnel ID", "rsvp.extended_tunnel_id", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_rsvp_extended_tunnel_ipv6, { "Extended Tunnel ID", "rsvp.extended_tunnel_id_ipv6", FT_IPv6, BASE_NONE, NULL, 0x0, NULL, HFILL }},
-      { &hf_rsvp_extended_tunnel, { "Extended Tunnel", "rsvp.extended_tunnel", FT_IPv4, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+      { &hf_rsvp_extended_tunnel, { "Extended Tunnel ID", "rsvp.extended_tunnel", FT_IPv4, BASE_NONE, NULL, 0x0, NULL, HFILL }},
       { &hf_rsvp_refresh_interval, { "Refresh interval", "rsvp.refresh_interval", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_rsvp_minimum_policed_unit, { "Minimum policed unit [m]", "rsvp.minimum_policed_unit", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_rsvp_maximum_packet_size, { "Maximum packet size [M]", "rsvp.maximum_packet_size", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},

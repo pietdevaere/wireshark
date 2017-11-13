@@ -608,21 +608,6 @@
     </message>
 </context>
 <context>
-    <name>ByteViewText</name>
-    <message>
-        <source>Show bytes as hexadecimal</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Byte %1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Bytes %1-%2</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
     <name>CaptureFile</name>
     <message>
         <source> [closing]</source>
@@ -1357,6 +1342,14 @@ PLEASE NOTE: One option MUST be selected.</source>
     </message>
     <message>
         <source>Background</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Set the display filter using this rule.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apply as filter</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4821,6 +4814,22 @@ PLEASE NOTE: One option MUST be selected.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>, 1 byte</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>, %1 bytes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Byte %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bytes %1-%2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Profile: </source>
         <translation type="unfinished"></translation>
     </message>
@@ -7445,7 +7454,7 @@ a:hover {
 <context>
     <name>PacketCommentDialog</name>
     <message>
-        <source>Packet Comment</source>
+        <source>Packet %1 Comment</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -7465,6 +7474,14 @@ a:hover {
     </message>
     <message>
         <source>[%1 closed] </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Byte %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bytes %1-%2</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -7836,14 +7853,6 @@ a:hover {
     </message>
     <message>
         <source>Colorize with Filter</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>, 1 byte</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>, %1 bytes</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -11578,6 +11587,10 @@ a:hover {
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Clear all entries.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Unknown User Accessible Table</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11602,6 +11615,10 @@ a:hover {
     </message>
     <message>
         <source>Copy this entry.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Clear all entries.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

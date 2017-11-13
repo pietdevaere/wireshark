@@ -430,6 +430,8 @@ typedef struct _SslSession {
     guchar tls13_draft_version;
     gint8 client_cert_type;
     gint8 server_cert_type;
+    guint32 client_ccs_frame;
+    guint32 server_ccs_frame;
 
     /* The address/proto/port of the server as determined from heuristics
      * (e.g. ClientHello) or set externally (via ssl_set_master_secret()). */
@@ -566,6 +568,12 @@ ssl_find_appdata_dissector(const char *name);
  @param len the source data len */
 extern void
 ssl_data_set(StringInfo* buf, const guchar* src, guint len);
+
+/** alloc the data with the specified len for the stringInfo buffer.
+ @param src the data source
+ @param len the source data len */
+extern gint
+ssl_data_alloc(StringInfo* str, size_t len);
 
 extern gint
 ssl_cipher_setiv(SSL_CIPHER_CTX *cipher, guchar* iv, gint iv_len);
@@ -1045,6 +1053,11 @@ tls13_dissect_hnd_key_update(ssl_common_dissect_t *hf, tvbuff_t *tvb,
 extern guint32
 tls_dissect_sct_list(ssl_common_dissect_t *hf, tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                      guint32 offset, guint32 offset_end, guint16 version);
+
+extern gboolean
+tls13_hkdf_expand_label(guchar draft_version,
+                        int md, const StringInfo *secret, const char *label, const char *hash_value,
+                        guint16 out_len, guchar **out);
 
 /* {{{ */
 #define SSL_COMMON_LIST_T(name) \

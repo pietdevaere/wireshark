@@ -1780,7 +1780,7 @@ gint ssl_get_keyex_alg(gint cipher)
 
 /* StringInfo structure (len + data) functions {{{ */
 
-static gint
+gint
 ssl_data_alloc(StringInfo* str, size_t len)
 {
     str->data = (guchar *)g_malloc(len);
@@ -2745,7 +2745,7 @@ static gint tls12_handshake_hash(SslDecryptSession* ssl, gint md, StringInfo* ou
     return 0;
 }
 
-static gboolean
+gboolean
 tls13_hkdf_expand_label(guchar draft_version,
                         int md, const StringInfo *secret, const char *label, const char *hash_value,
                         guint16 out_len, guchar **out)
@@ -5564,6 +5564,11 @@ ssl_dissect_change_cipher_spec(ssl_common_dissect_t *hf, tvbuff_t *tvb,
             val_to_str_const(session->version, ssl_version_short_names, "SSL"),
             val_to_str_const(SSL_ID_CHG_CIPHER_SPEC, ssl_31_content_type, "unknown"));
     ti = proto_tree_add_item(tree, hf->hf.change_cipher_spec, tvb, offset, 1, ENC_NA);
+
+    /* Remember frame number of first CCS */
+    guint32 *ccs_frame = is_from_server ? &session->server_ccs_frame : &session->client_ccs_frame;
+    if (*ccs_frame == 0)
+        *ccs_frame = pinfo->num;
 
     /* Use heuristics to detect an abbreviated handshake, assume that missing
      * ServerHelloDone implies reusing previously negotiating keys. Then when

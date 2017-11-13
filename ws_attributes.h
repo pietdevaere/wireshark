@@ -4,23 +4,13 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * SPDX-License-Identifier: GPL-2.0+
  */
 
 #ifndef __WS_ATTRIBUTES_H__
 #define __WS_ATTRIBUTES_H__
+
+#include "ws_compiler_tests.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +24,6 @@ extern "C" {
  *
  * XXX - similar hints for other compilers?
  */
-
 #if defined(__GNUC__)
   /* This includes clang */
   #define _U_ __attribute__((unused))
@@ -42,14 +31,42 @@ extern "C" {
   #define _U_
 #endif
 
-/* Hint to the compiler that a function never returns */
-#if defined(__GNUC__)
-  /* This includes clang */
+/*
+ * WS_NORETURN, before a function declaration, means "this function
+ * never returns".  (It must go before the function declaration, e.g.
+ * "extern WS_NORETURN func(...)" rather than after the function
+ * declaration, as the MSVC version has to go before the declaration.)
+ */
+#if __has_attribute(noreturn) \
+    || WS_IS_AT_LEAST_GNUC_VERSION(2,5) \
+    || WS_IS_AT_LEAST_SUNC_VERSION(5,9) \
+    || WS_IS_AT_LEAST_XL_C_VERSION(10,1) \
+    || WS_IS_AT_LEAST_HP_C_VERSION(6,10)
+  /*
+   * Compiler with support for __attribute__((noreturn)), or GCC 2.5 and
+   * later, or Solaris Studio 12 (Sun C 5.9) and later, or IBM XL C 10.1
+   * and later (do any earlier versions of XL C support this?), or
+   * HP aCC A.06.10 and later.
+   */
   #define WS_NORETURN __attribute__((noreturn))
 #elif defined(_MSC_VER)
+  /*
+   * MSVC.
+   */
   #define WS_NORETURN __declspec(noreturn)
 #else
   #define WS_NORETURN
+#endif
+
+/*
+ * WS_RETNONNULL, before a function declaration, means "this function
+ * always returns a non-null pointer".
+ */
+#if __has_attribute(returns_nonnull) \
+    || WS_IS_AT_LEAST_GNUC_VERSION(4,9)
+  #define WS_RETNONNULL __attribute__((returns_nonnull))
+#else
+  #define WS_RETNONNULL
 #endif
 
 #ifdef __cplusplus
