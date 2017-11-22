@@ -39,6 +39,9 @@ void proto_reg_handoff_quic(void);
 void proto_register_quic(void);
 
 /* Initialize the protocol and registered fields */
+static int hf_quic_measurement_byte = -1;
+static int hf_quic_latency_spinbit = -1;
+
 static int proto_quic = -1;
 static int hf_quic_header_form = -1;
 static int hf_quic_long_packet_type = -1;
@@ -103,6 +106,7 @@ static expert_field ei_quic_ft_unknown = EI_INIT;
 static gint ett_quic = -1;
 static gint ett_quic_ft = -1;
 static gint ett_quic_ftflags = -1;
+static gint ett_quic_measurement = -1;
 
 static dissector_handle_t quic_handle;
 static dissector_handle_t ssl_handle;
@@ -684,21 +688,35 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *quic_
 
 static int
 dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tree, guint offset){
-    guint32 long_packet_type, pkn;
+    guint32 long_packet_type, pkn, version;
     guint64 cid;
     tvbuff_t *payload_tvb;
+	proto_tree *measurement_tree;
+	proto_item *ti_measurement;
 
+	/* packet type */
     proto_tree_add_item_ret_uint(quic_tree, hf_quic_long_packet_type, tvb, offset, 1, ENC_NA, &long_packet_type);
     offset += 1;
 
+	/* connID */
     proto_tree_add_item_ret_uint64(quic_tree, hf_quic_connection_id, tvb, offset, 8, ENC_BIG_ENDIAN, &cid);
     offset += 8;
 
+	/* PN */
     proto_tree_add_item_ret_uint(quic_tree, hf_quic_packet_number, tvb, offset, 4, ENC_BIG_ENDIAN, &pkn);
     offset += 4;
 
-    proto_tree_add_item(quic_tree, hf_quic_version, tvb, offset, 4, ENC_BIG_ENDIAN);
+	/* Version */
+    proto_tree_add_item_ret_uint(quic_tree, hf_quic_version, tvb, offset, 4, ENC_BIG_ENDIAN, &version);
     offset += 4;
+
+	/* Measurement byte */
+    ti_measurement = proto_tree_add_item(quic_tree, hf_quic_measurement_byte, tvb, offset, 1, ENC_BIG_ENDIAN);
+
+	measurement_tree = proto_item_add_subtree(ti_measurement, ett_quic_measurement);
+	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit, tvb, offset, 1, ENC_NA);
+
+	offset += 1;
 
     col_append_fstr(pinfo->cinfo, COL_INFO, "%s, PKN: %u, CID: 0x%" G_GINT64_MODIFIER "x", val_to_str(long_packet_type, quic_long_packet_type_vals, "Unknown Packet Type"), pkn, cid);
 
@@ -747,6 +765,9 @@ dissect_quic_short_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tr
     guint8 short_flags;
     guint64 cid = 0;
     guint32 pkn_len, pkn;
+	tvbuff_t *payload_tvb;
+	proto_tree *measurement_tree;
+	proto_item *ti_measurement;
 
     short_flags = tvb_get_guint8(tvb, offset);
     proto_tree_add_item(quic_tree, hf_quic_short_cid_flag, tvb, offset, 1, ENC_NA);
@@ -763,6 +784,14 @@ dissect_quic_short_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tr
     pkn_len = get_len_packet_number(short_flags);
     proto_tree_add_item_ret_uint(quic_tree, hf_quic_packet_number, tvb, offset, pkn_len, ENC_BIG_ENDIAN, &pkn);
     offset += pkn_len;
+
+	/* Measurement byte */
+    ti_measurement = proto_tree_add_item(quic_tree, hf_quic_measurement_byte, tvb, offset, 1, ENC_BIG_ENDIAN);
+
+	measurement_tree = proto_item_add_subtree(ti_measurement, ett_quic_measurement);
+	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit, tvb, offset, 1, ENC_NA);
+
+	offset += 1;
 
     /* Protected Payload */
     proto_tree_add_item(quic_tree, hf_quic_protected_payload, tvb, offset, -1, ENC_NA);
@@ -853,6 +882,18 @@ proto_register_quic(void)
             FT_UINT8, BASE_DEC, VALS(quic_short_packet_type_vals), SH_PT,
             "Short Header Packet Type", HFILL }
         },
+		/* Measurement byte */
+		{ &hf_quic_measurement_byte,
+          { "Measurement", "quic.measurement",
+            FT_UINT8, BASE_HEX, NULL, 0xFF,
+            "Measurement Byte", HFILL }
+        },
+		{ &hf_quic_latency_spinbit,
+          { "Latency Spinbit", "quic.measurement.latencyspin",
+            FT_BOOLEAN, 8, NULL, MEASUREMENT_SPINBIT,
+            NULL, HFILL }
+        },
+
         { &hf_quic_protected_payload,
           { "Protected Payload", "quic.protected_payload",
             FT_BYTES, BASE_NONE, NULL, 0x0,
@@ -1098,7 +1139,8 @@ proto_register_quic(void)
     static gint *ett[] = {
         &ett_quic,
         &ett_quic_ft,
-        &ett_quic_ftflags
+        &ett_quic_ftflags,
+		&ett_quic_measurement
     };
 
     static ei_register_info ei[] = {
