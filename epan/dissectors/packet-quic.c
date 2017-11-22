@@ -112,8 +112,29 @@ const value_string quic_version_vals[] = {
     { 0xff000005, "draft-05" },
     { 0xff000006, "draft-06" },
     { 0xff000007, "draft-07" },
+	{ 0xf0f0f0f0, "ETH-00" },
+	{ 0xf0f0f0f0, "ETH-01" },
+	{ 0xf0f0f0f0, "ETH-02" },
+	{ 0xf0f0f0f0, "ETH-03" },
+	{ 0xf0f0f0f0, "ETH-04" },
+	{ 0xf0f0f0f0, "ETH-05" },
+	{ 0xf0f0f0f0, "ETH-06" },
+	{ 0xf0f0f0f0, "ETH-07" },
+	{ 0xf0f0f0f0, "ETH-08" },
+	{ 0xf0f0f0f0, "ETH-09" },
+	{ 0xf0f0f0f0, "ETH-10" },
+	{ 0xf0f0f0f0, "ETH-11" },
+	{ 0xf0f0f0f0, "ETH-12" },
+	{ 0xf0f0f0f0, "ETH-13" },
+	{ 0xf0f0f0f0, "ETH-14" },
     { 0, NULL }
 };
+
+#define ETH_QUICK_MASK 0xfffffff0
+#define ETH_QUICK_PREFIX 0xf0f0f0f0
+
+#define MEASUREMENT_SPINBIT (1 << 7)
+
 
 static const value_string quic_short_long_header_vals[] = {
     { 0, "Short Header" },
