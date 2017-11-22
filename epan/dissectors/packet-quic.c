@@ -739,15 +739,16 @@ dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tre
     } else {
 //		if(long_packet_type <= 0x05 || long_packet_type == 0x09) {
         /* All Unprotected have 8 bytes with FNV-1a has (See QUIC-TLS) */
-        payload_tvb = tvb_new_subset_length(tvb, 0, tvb_reported_length(tvb) - 8);
+        //payload_tvb = tvb_new_subset_length(tvb, 0, tvb_reported_length(tvb) - 8);
+		payload_tvb = tvb_new_subset_length(tvb, 0, tvb_reported_length(tvb));
 
         while(tvb_reported_length_remaining(payload_tvb, offset) > 0){
             offset = dissect_quic_frame_type(payload_tvb, pinfo, quic_tree, offset);
         }
 
         /* FNV-1a hash, TODO: Add check and expert info ? */
-        proto_tree_add_item(quic_tree, hf_quic_hash, tvb, offset, 8, ENC_NA);
-        offset += 8;
+        //proto_tree_add_item(quic_tree, hf_quic_hash, tvb, offset, 8, ENC_NA);
+        //offset += 8;
     }
 // 		else {
 //
@@ -794,8 +795,14 @@ dissect_quic_short_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tr
 	offset += 1;
 
     /* Protected Payload */
-    proto_tree_add_item(quic_tree, hf_quic_protected_payload, tvb, offset, -1, ENC_NA);
-    offset += tvb_reported_length_remaining(tvb, offset);
+    payload_tvb = tvb_new_subset_length(tvb, 0, tvb_reported_length(tvb));
+
+        while(tvb_reported_length_remaining(payload_tvb, offset) > 0){
+            offset = dissect_quic_frame_type(payload_tvb, pinfo, quic_tree, offset);
+        }
+
+	//proto_tree_add_item(quic_tree, hf_quic_protected_payload, tvb, offset, -1, ENC_NA);
+    //offset += tvb_reported_length_remaining(tvb, offset);
 
     col_append_fstr(pinfo->cinfo, COL_INFO, "Protected Payload (KP%u), PKN: %u", short_flags & SH_KP, pkn);
 
