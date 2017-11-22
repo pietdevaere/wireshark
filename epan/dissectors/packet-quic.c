@@ -448,7 +448,7 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *quic_
 
     } else if (frame_type >= FT_ACK_MIN && frame_type <= FT_ACK_MAX ){
         guint32 len_largest_acknowledged = 0, len_ack_block = 0;
-        guint8 num_blocks = 0, num_ts;
+        guint8 num_blocks = 0; //, num_ts;
 
         ftflags_tree = proto_item_add_subtree(ti_ftflags, ett_quic_ftflags);
         proto_tree_add_item(ftflags_tree, hf_quic_frame_type_ack, tvb, offset, 1, ENC_NA);
@@ -465,9 +465,9 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *quic_
             offset += 1;
         }
 
-        proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_num_ts, tvb, offset, 1, ENC_NA);
-        num_ts = tvb_get_guint8(tvb , offset);
-        offset += 1;
+        //proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_num_ts, tvb, offset, 1, ENC_NA);
+        //num_ts = tvb_get_guint8(tvb , offset);
+        //offset += 1;
 
         proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_largest_acknowledged, tvb, offset, len_largest_acknowledged, ENC_BIG_ENDIAN);
         offset += len_largest_acknowledged;
@@ -493,32 +493,32 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *quic_
             num_blocks--;
         }
 
-        /* Timestamp Section */
-        if(num_ts){
-
-            /* Delta Largest Acknowledged */
-            proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_dla, tvb, offset, 1, ENC_BIG_ENDIAN);
-            offset += 1;
-
-            /* First Timestamp */
-            proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_ft, tvb, offset, 4, ENC_BIG_ENDIAN);
-            offset += 4;
-
-            num_ts--;
-            /* Repeated "Num Timestamps - 1" */
-            while(num_ts){
-
-                /* Delta Largest Acknowledged */
-                proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_dla, tvb, offset, 1, ENC_BIG_ENDIAN);
-                offset += 1;
-
-                /* Time Since Previous Timestamp*/
-                proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_tspt, tvb, offset, 2, ENC_BIG_ENDIAN);
-                offset += 2;
-
-                num_ts--;
-            }
-        }
+//         /* Timestamp Section */
+//         if(num_ts){
+//
+//             /* Delta Largest Acknowledged */
+//             proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_dla, tvb, offset, 1, ENC_BIG_ENDIAN);
+//             offset += 1;
+//
+//             /* First Timestamp */
+//             proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_ft, tvb, offset, 4, ENC_BIG_ENDIAN);
+//             offset += 4;
+//
+//             num_ts--;
+//             /* Repeated "Num Timestamps - 1" */
+//             while(num_ts){
+//
+//                 /* Delta Largest Acknowledged */
+//                 proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_dla, tvb, offset, 1, ENC_BIG_ENDIAN);
+//                 offset += 1;
+//
+//                 /* Time Since Previous Timestamp*/
+//                 proto_tree_add_item(ft_tree, hf_quic_frame_type_ack_tspt, tvb, offset, 2, ENC_BIG_ENDIAN);
+//                 offset += 2;
+//
+//                 num_ts--;
+//             }
+//         }
 
     } else { /* it is not STREAM or ACK Frame*/
         offset += 1;
