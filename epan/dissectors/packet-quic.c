@@ -43,6 +43,7 @@ static int hf_quic_measurement_byte = -1;
 static int hf_quic_latency_spin = -1;
 static int hf_quic_latency_spinbit = -1;
 static int hf_quic_latency_spinbit_legacy = -1;
+static int hf_quic_latency_spin_valid = -1;
 
 static int proto_quic = -1;
 static int hf_quic_header_form = -1;
@@ -142,8 +143,7 @@ const value_string quic_version_vals[] = {
 #define MEASUREMENT_SPINBIT (1 << 6)
 #define MEASUREMENT_SPINBIT_LEGACY (1 << 7)
 #define MEASUREMENT_SPIN ((1 << 6) | (1 << 7))
-
-
+#define MEASUREMENT_SPIN_VALID (1 << 5)
 
 static const value_string quic_short_long_header_vals[] = {
     { 0, "Short Header" },
@@ -722,6 +722,7 @@ dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tre
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit_legacy, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spin, tvb, offset, 1, ENC_NA);
+	proto_tree_add_item(measurement_tree, hf_quic_latency_spin_valid, tvb, offset, 1, ENC_NA);
 
 	offset += 1;
 
@@ -800,6 +801,7 @@ dissect_quic_short_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tr
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit_legacy, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spin, tvb, offset, 1, ENC_NA);
+	proto_tree_add_item(measurement_tree, hf_quic_latency_spin_valid, tvb, offset, 1, ENC_NA);
 
 	offset += 1;
 
@@ -917,6 +919,11 @@ proto_register_quic(void)
 		{ &hf_quic_latency_spinbit_legacy,
           { "Latency Spinbit (Legacy)", "quic.measurement.legacylatencyspinbit",
             FT_BOOLEAN, 8, NULL, MEASUREMENT_SPINBIT_LEGACY,
+            NULL, HFILL }
+        },
+		{ &hf_quic_latency_spin_valid,
+          { "Latency Spin Valid", "quic.measurement.latencyvalid",
+            FT_BOOLEAN, 8, NULL, MEASUREMENT_SPIN_VALID,
             NULL, HFILL }
         },
         { &hf_quic_protected_payload,
