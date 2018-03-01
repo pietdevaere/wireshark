@@ -44,6 +44,10 @@ static int hf_quic_latency_spin = -1;
 static int hf_quic_latency_spinbit = -1;
 static int hf_quic_latency_spinbit_legacy = -1;
 static int hf_quic_latency_spin_valid = -1;
+static int hf_quic_blocking = -1;
+static int hf_quic_latency_spin_status = -1;
+static int hf_quic_loss = -1;
+
 
 static int proto_quic = -1;
 static int hf_quic_header_form = -1;
@@ -144,6 +148,16 @@ const value_string quic_version_vals[] = {
 #define MEASUREMENT_SPINBIT_LEGACY (1 << 7)
 #define MEASUREMENT_SPIN ((1 << 6) | (1 << 7))
 #define MEASUREMENT_SPIN_VALID (1 << 5)
+#define MEASUREMENT_BLOCKING (1 << 4)
+#define MEASUREMENT_SPIN_STATUS ((1 << 2) | (1 << 3))
+#define MEASUREMENT_LOSS (1 << 1)
+
+static const value_string quic_latency_status_vals[] = {
+    { 0b00, "Invalid" },
+    { 0b01, "Handshake 1" },
+    { 0b10, "Handshake 2" },
+    { 0b11, "Valid" }
+};
 
 static const value_string quic_short_long_header_vals[] = {
     { 0, "Short Header" },
@@ -723,6 +737,9 @@ dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tre
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit_legacy, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spin, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spin_valid, tvb, offset, 1, ENC_NA);
+	proto_tree_add_item(measurement_tree, hf_quic_blocking, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(measurement_tree, hf_quic_latency_spin_status, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(measurement_tree, hf_quic_loss, tvb, offset, 1, ENC_NA);
 
 	offset += 1;
 
@@ -802,6 +819,9 @@ dissect_quic_short_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tr
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spinbit_legacy, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spin, tvb, offset, 1, ENC_NA);
 	proto_tree_add_item(measurement_tree, hf_quic_latency_spin_valid, tvb, offset, 1, ENC_NA);
+	proto_tree_add_item(measurement_tree, hf_quic_blocking, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(measurement_tree, hf_quic_latency_spin_status, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(measurement_tree, hf_quic_loss, tvb, offset, 1, ENC_NA);
 
 	offset += 1;
 
@@ -924,6 +944,21 @@ proto_register_quic(void)
 		{ &hf_quic_latency_spin_valid,
           { "Latency Spin Valid", "quic.measurement.latencyvalid",
             FT_BOOLEAN, 8, NULL, MEASUREMENT_SPIN_VALID,
+            NULL, HFILL }
+        },
+        { &hf_quic_blocking,
+          { "Blocking", "quic.measurement.blocking",
+            FT_BOOLEAN, 8, NULL, MEASUREMENT_BLOCKING,
+            NULL, HFILL }
+        },
+        { &hf_quic_latency_spin_status,
+          { "Latency Status", "quic.measurement.latencystatus",
+            FT_UINT8, BASE_DEC, VALS(quic_latency_status_vals), MEASUREMENT_SPIN_STATUS,
+            NULL, HFILL }
+        },
+        { &hf_quic_loss,
+          { "Loss", "quic.measurement.loss",
+            FT_BOOLEAN, 8, NULL, MEASUREMENT_LOSS,
             NULL, HFILL }
         },
         { &hf_quic_protected_payload,
