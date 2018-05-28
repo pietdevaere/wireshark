@@ -47,6 +47,7 @@ static int hf_quic_latency_spin_valid = -1;
 static int hf_quic_blocking = -1;
 static int hf_quic_latency_spin_status = -1;
 static int hf_quic_loss = -1;
+static int hf_quic_latency_spin_valid_edge = -1;
 
 
 static int proto_quic = -1;
@@ -151,6 +152,8 @@ const value_string quic_version_vals[] = {
 #define MEASUREMENT_BLOCKING (1 << 4)
 #define MEASUREMENT_SPIN_STATUS ((1 << 2) | (1 << 3))
 #define MEASUREMENT_LOSS (1 << 1)
+#define MEASUREMENT_SPIN_VALID_EDGE (1 << 0)
+
 
 static const value_string quic_latency_status_vals[] = {
     { 0b00, "Invalid" },
@@ -740,6 +743,8 @@ dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tre
 	proto_tree_add_item(measurement_tree, hf_quic_blocking, tvb, offset, 1, ENC_NA);
         proto_tree_add_item(measurement_tree, hf_quic_latency_spin_status, tvb, offset, 1, ENC_NA);
         proto_tree_add_item(measurement_tree, hf_quic_loss, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(measurement_tree, hf_quic_latency_spin_valid_edge, tvb, offset, 1, ENC_NA);
+
 
 	offset += 1;
 
@@ -822,6 +827,7 @@ dissect_quic_short_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tr
 	proto_tree_add_item(measurement_tree, hf_quic_blocking, tvb, offset, 1, ENC_NA);
         proto_tree_add_item(measurement_tree, hf_quic_latency_spin_status, tvb, offset, 1, ENC_NA);
         proto_tree_add_item(measurement_tree, hf_quic_loss, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(measurement_tree, hf_quic_latency_spin_valid_edge, tvb, offset, 1, ENC_NA);
 
 	offset += 1;
 
@@ -927,22 +933,22 @@ proto_register_quic(void)
             "Measurement Byte", HFILL }
         },
 		{ &hf_quic_latency_spin,
-          { "Latency Spin", "quic.measurement.latencyspin",
+          { "Latency Spin", "quic.measurement.latency.spin",
             FT_UINT8, BASE_DEC, NULL, MEASUREMENT_SPIN,
             NULL, HFILL }
         },
 		{ &hf_quic_latency_spinbit,
-          { "Latency Spinbit", "quic.measurement.latencyspinbit",
+          { "Latency Spinbit", "quic.measurement.latency.spinbit",
             FT_BOOLEAN, 8, NULL, MEASUREMENT_SPINBIT,
             NULL, HFILL }
         },
 		{ &hf_quic_latency_spinbit_legacy,
-          { "Latency Spinbit (Legacy)", "quic.measurement.legacylatencyspinbit",
+          { "Latency Spinbit (Legacy)", "quic.measurement.latency.spinbit.legacy",
             FT_BOOLEAN, 8, NULL, MEASUREMENT_SPINBIT_LEGACY,
             NULL, HFILL }
         },
 		{ &hf_quic_latency_spin_valid,
-          { "Latency Spin Valid", "quic.measurement.latencyvalid",
+          { "Latency Spin Valid", "quic.measurement.latency.valid",
             FT_BOOLEAN, 8, NULL, MEASUREMENT_SPIN_VALID,
             NULL, HFILL }
         },
@@ -952,13 +958,18 @@ proto_register_quic(void)
             NULL, HFILL }
         },
         { &hf_quic_latency_spin_status,
-          { "Latency Status", "quic.measurement.latencystatus",
+          { "Latency Status", "quic.measurement.latency.status",
             FT_UINT8, BASE_DEC, VALS(quic_latency_status_vals), MEASUREMENT_SPIN_STATUS,
             NULL, HFILL }
         },
         { &hf_quic_loss,
           { "Loss", "quic.measurement.loss",
             FT_BOOLEAN, 8, NULL, MEASUREMENT_LOSS,
+            NULL, HFILL }
+        },
+        { &hf_quic_latency_spin_valid_edge,
+          { "Latency Spin Valid Edge", "quic.measurement.latency.validedge",
+            FT_BOOLEAN, 8, NULL, MEASUREMENT_SPIN_VALID,
             NULL, HFILL }
         },
         { &hf_quic_protected_payload,
