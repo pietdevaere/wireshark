@@ -156,6 +156,8 @@ static int hf_tcp_ack = -1;
 static int hf_tcp_hdr_len = -1;
 static int hf_tcp_flags = -1;
 static int hf_tcp_flags_res = -1;
+static int hf_tcp_flags_vec = -1;
+static int hf_tcp_flags_spin = -1;
 static int hf_tcp_flags_ns = -1;
 static int hf_tcp_flags_cwr = -1;
 static int hf_tcp_flags_ecn = -1;
@@ -658,7 +660,7 @@ tcp_flags_to_str_first_letter(const struct tcpheader *tcph)
     wmem_strbuf_t *buf = wmem_strbuf_new(wmem_packet_scope(), "");
     unsigned i;
     const unsigned flags_count = 12;
-    const char first_letters[] = "RRRNCEUAPRSF";
+    const char first_letters[] = "XYZNCEUAPRSF";
 
     /* upper three bytes are marked as reserved ('R'). */
     for (i = 0; i < flags_count; i++) {
@@ -6073,6 +6075,8 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
                                         tcph->th_flags, "Flags: 0x%03x (%s)", tcph->th_flags, flags_str);
         field_tree = proto_item_add_subtree(tf, ett_tcp_flags);
         proto_tree_add_boolean(field_tree, hf_tcp_flags_res, tvb, offset + 12, 1, tcph->th_flags);
+        proto_tree_add_item(field_tree, hf_tcp_flags_vec, tvb, offset + 12, 1, tcph->th_flags);
+        proto_tree_add_boolean(field_tree, hf_tcp_flags_spin, tvb, offset + 12, 1, tcph->th_flags);
         proto_tree_add_boolean(field_tree, hf_tcp_flags_ns, tvb, offset + 12, 1, tcph->th_flags);
         proto_tree_add_boolean(field_tree, hf_tcp_flags_cwr, tvb, offset + 13, 1, tcph->th_flags);
         proto_tree_add_boolean(field_tree, hf_tcp_flags_ecn, tvb, offset + 13, 1, tcph->th_flags);
@@ -6592,6 +6596,17 @@ proto_register_tcp(void)
         { &hf_tcp_flags_res,
         { "Reserved",            "tcp.flags.res", FT_BOOLEAN, 12, TFS(&tfs_set_notset), TH_RES,
             "Three reserved bits (must be zero)", HFILL }},
+
+        /* hack piedv*/
+        { &hf_tcp_flags_vec,
+        { "VEC",            "tcp.flags.vec", FT_UINT8, BASE_DEC, NULL, TH_VEC,
+            "Valid edge counter", HFILL }},
+
+
+        { &hf_tcp_flags_spin,
+        { "Spin",            "tcp.flags.spin", FT_BOOLEAN, 12, TFS(&tfs_set_notset), TH_SPIN,
+            "Spin bit", HFILL }},
+        /* hack pietdv*/
 
         { &hf_tcp_flags_ns,
         { "Nonce", "tcp.flags.ns", FT_BOOLEAN, 12, TFS(&tfs_set_notset), TH_NS,

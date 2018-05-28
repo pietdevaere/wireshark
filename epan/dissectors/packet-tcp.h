@@ -43,6 +43,8 @@ extern "C" {
 #define TH_CWR  0x0080
 #define TH_NS   0x0100
 #define TH_RES  0x0E00 /* 3 reserved bits */
+#define TH_VEC  0x0C
+#define TH_SPIN 0x0200
 #define TH_MASK 0x0FFF
 
 #define IS_TH_FIN(x) (x & TH_FIN)
